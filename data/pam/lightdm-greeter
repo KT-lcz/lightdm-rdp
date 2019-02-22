@@ -1,7 +1,8 @@
 #%PAM-1.0
 
 # Load environment from /etc/environment and ~/.pam_environment
-auth      required pam_env.so
+session      required pam_env.so readenv=1
+session      required pam_env.so readenv=1 envfile=/etc/default/locale
 
 # Always let the greeter start without authentication
 auth      required pam_permit.so
@@ -15,3 +16,5 @@ password  required pam_deny.so
 # Setup session
 session   required pam_unix.so
 session   optional pam_systemd.so
+
+@include common-session
