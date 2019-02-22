@@ -86,7 +86,7 @@ shared_data_manager_ensure_user_dir (SharedDataManager *manager, const gchar *us
     g_debug ("Creating shared data directory %s", path);
 
     g_autoptr(GError) error = NULL;
-    gboolean result = g_file_make_directory (file, NULL, &error);
+    gboolean result = g_file_make_directory_with_parents (file, NULL, &error);
     if (error)
     {
         if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_EXISTS))

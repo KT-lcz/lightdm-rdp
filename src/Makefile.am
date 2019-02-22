@@ -77,7 +77,7 @@ lightdm_CFLAGS = \
 	$(LIGHTDM_CFLAGS) \
 	-I"$(top_srcdir)/common" \
 	-DSBIN_DIR=\"$(sbindir)\" \
-	-DUSERS_DIR=\"$(localstatedir)/lib/lightdm-data\" \
+	-DUSERS_DIR=\"$(localstatedir)/lib/lightdm/data\" \
 	-DLOG_DIR=\"$(localstatedir)/log/lightdm\" \
 	-DRUN_DIR=\"$(localstatedir)/run/lightdm\" \
 	-DCACHE_DIR=\"$(localstatedir)/cache/lightdm\" \
