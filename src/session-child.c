@@ -393,7 +393,10 @@ session_child_run (int argc, char **argv)
         else
         {
             /* Set POSIX variables */
-            pam_putenv (pam_handle, "PATH=/usr/local/bin:/usr/bin:/bin");
+            if (user_get_uid (user) == 0)
+              pam_putenv (pam_handle, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+            else
+              pam_putenv (pam_handle, "PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games");
             pam_putenv (pam_handle, g_strdup_printf ("USER=%s", username));
             pam_putenv (pam_handle, g_strdup_printf ("LOGNAME=%s", username));
             pam_putenv (pam_handle, g_strdup_printf ("HOME=%s", user_get_home_directory (user)));

@@ -382,6 +382,11 @@ run_script (Seat *seat, DisplayServer *display_server, const gchar *script_name,
         process_set_env (script, "LD_LIBRARY_PATH", g_getenv ("LD_LIBRARY_PATH"));
     if (g_getenv ("PATH"))
         process_set_env (script, "PATH", g_getenv ("PATH"));
+    else
+        if (user_get_uid (user) == 0)
+            process_set_env (script, "PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+        else
+            process_set_env (script, "PATH", "/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games");
 
     /* Variables required for regression tests */
     if (g_getenv ("LIGHTDM_TEST_ROOT"))
