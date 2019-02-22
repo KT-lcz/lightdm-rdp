@@ -32,7 +32,7 @@
   owner /dev/shm/** rmw,
   /etc/ r,
   /etc/** rmk,
-  /etc/gdm/Xsession ix,
+  /etc/X11/Xsession ix,
   /etc/X11/xdm/** ix, # needed for openSUSE's default session-wrapper
   /etc/X11/xinit/** ix, # needed for openSUSE's default session-wrapper
   /lib/ r,
