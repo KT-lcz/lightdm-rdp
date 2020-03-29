@@ -123,12 +123,17 @@ const gchar *session_get_login1_session_id (Session *session);
 const gchar *session_get_console_kit_cookie (Session *session);
 
 void session_respond (Session *session, struct pam_response *response);
+void session_prompt_respond (Session *session, struct pam_response *response);
 
 void session_respond_error (Session *session, int error);
+void session_prompt_respond_error (Session *session, int error);
 
 int session_get_messages_length (Session *session);
 
 const struct pam_message *session_get_messages (Session *session);
+
+int session_get_prompt_messages_length (Session *session);
+const struct pam_message *session_get_prompt_messages (Session *session);
 
 gboolean session_get_is_authenticated (Session *session);
 

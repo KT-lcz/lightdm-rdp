@@ -394,6 +394,7 @@ pam_messages_cb (Session *session, Greeter *greeter)
     }
     write_message (greeter, message, offset);
 
+    g_debug ("Prompt greeter with %d n_prompts", n_prompts);
     /* Continue immediately if nothing to respond with */
     // FIXME: Should probably give the greeter a chance to ack the message
     if (n_prompts == 0)
@@ -645,8 +646,8 @@ handle_continue_authentication (Greeter *greeter, gchar **secrets)
     if (priv->authentication_session == NULL)
         return;
 
-    int messages_length = session_get_messages_length (priv->authentication_session);
-    const struct pam_message *messages = session_get_messages (priv->authentication_session);
+    int messages_length = session_get_prompt_messages_length (priv->authentication_session);
+    const struct pam_message *messages = session_get_prompt_messages (priv->authentication_session);
 
     /* Check correct number of responses */
     int n_prompts = 0;
@@ -658,7 +659,7 @@ handle_continue_authentication (Greeter *greeter, gchar **secrets)
     }
     if (g_strv_length (secrets) != n_prompts)
     {
-        session_respond_error (priv->authentication_session, PAM_CONV_ERR);
+        session_prompt_respond_error (priv->authentication_session, PAM_CONV_ERR);
         return;
     }
 
@@ -678,7 +679,7 @@ handle_continue_authentication (Greeter *greeter, gchar **secrets)
         }
     }
 
-    session_respond (priv->authentication_session, response);
+    session_prompt_respond (priv->authentication_session, response);
 
     for (int i = 0; i < messages_length; i++)
         secure_free (greeter, response[i].resp);

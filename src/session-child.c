@@ -16,6 +16,7 @@
 #include <utmp.h>
 #include <utmpx.h>
 #include <sys/mman.h>
+#include <pthread.h>
 
 #if HAVE_LIBAUDIT
 #include <libaudit.h>
@@ -37,6 +38,9 @@ static GPid child_pid = 0;
 /* Pipe to communicate with daemon */
 static int from_daemon_output = 0;
 static int to_daemon_input = 0;
+
+/* Pipe to prompt with daemon */
+static int from_daemon_output_prompt = 0;
 
 static gboolean is_interactive;
 static gboolean do_authenticate;
@@ -72,6 +76,16 @@ read_data (void *buf, size_t count)
     return n_read;
 }
 
+static ssize_t
+read_prompt_data (void *buf, size_t count)
+{
+    ssize_t n_read = read (from_daemon_output_prompt, buf, count);
+    if (n_read < 0)
+        g_printerr ("Error reading prompt from daemon: %s\n", strerror (errno));
+
+    return n_read;
+}
+
 static gchar *
 read_string_full (void* (*alloc_fn)(size_t n))
 {
@@ -94,11 +108,33 @@ read_string_full (void* (*alloc_fn)(size_t n))
 }
 
 static gchar *
+read_prompt_string_full (void* (*alloc_fn)(size_t n))
+{
+    int length;
+    if (read_prompt_data (&length, sizeof (length)) <= 0)
+        return NULL;
+    if (length < 0)
+        return NULL;
+    if (length > MAX_STRING_LENGTH)
+    {
+        g_printerr ("Invalid string length %d from daemon\n", length);
+        return NULL;
+    }
+
+    gchar *value = (*alloc_fn) (sizeof (gchar) * (length + 1));
+    read_prompt_data (value, length);
+    value[length] = '\0';
+
+    return value;
+}
+
+static gchar *
 read_string (void)
 {
     return read_string_full (g_malloc);
 }
 
+pthread_mutex_t mutex_msg;
 static int
 pam_conv_cb (int msg_length, const struct pam_message **msg, struct pam_response **resp, void *app_data)
 {
@@ -106,18 +142,27 @@ pam_conv_cb (int msg_length, const struct pam_message **msg, struct pam_response
     if (authentication_complete)
         return PAM_SUCCESS;
 
-    /* Cancel authentication if requiring input */
-    if (!is_interactive)
+    // 将普通消息和PAM_PROMPT_ECHO_X的消息分开，从lightdm中读取回复内容时使用不同的管道
+    // 因为在lightdm的实现中处理PAM_PROMPT_ECHO_X时会一直等待greeter的消息，而其他消息则会立即给出响应结果
+    int n_prompts = 0;
+
+    for (int i = 0; i < msg_length; i++)
     {
-        for (int i = 0; i < msg_length; i++)
+        if (msg[i]->msg_style == PAM_PROMPT_ECHO_ON || msg[i]->msg_style == PAM_PROMPT_ECHO_OFF)
         {
-            if (msg[i]->msg_style == PAM_PROMPT_ECHO_ON || msg[i]->msg_style == PAM_PROMPT_ECHO_OFF)
+            /* Cancel authentication if requiring input */
+            if (!is_interactive)
             {
                 g_printerr ("Stopping PAM conversation, interaction requested but not supported\n");
                 return PAM_CONV_ERR;
             }
-        }
 
+            ++n_prompts;
+        }
+    }
+
+    if (!is_interactive)
+    {
         /* Ignore informational messages */
         return PAM_SUCCESS;
     }
@@ -125,6 +170,10 @@ pam_conv_cb (int msg_length, const struct pam_message **msg, struct pam_response
     /* Check if we changed user */
     gchar *username = NULL;
     pam_get_item (pam_handle, PAM_USER, (const void **) &username);
+
+    // lock for pam
+    // 在pam模块中可能使用多线程调用此函数，加锁是为了保证消息在管道中的相对顺序
+    pthread_mutex_lock(&mutex_msg);
 
     /* Notify the daemon */
     write_string (username);
@@ -140,17 +189,40 @@ pam_conv_cb (int msg_length, const struct pam_message **msg, struct pam_response
 
     /* Get response */
     int error;
-    read_data (&error, sizeof (error));
-    if (error != PAM_SUCCESS)
+    if (n_prompts) {
+        // 只为普通消息加锁，如果 PAM_PROMPT_ECHO_X 类型的消息也从多个线程发送则可能存在风险
+        // unlock for read message
+        pthread_mutex_unlock(&mutex_msg);
+        read_prompt_data (&error, sizeof (error));
+    } else {
+        read_data (&error, sizeof (error));
+    }
+    if (error != PAM_SUCCESS) {
+        if (!n_prompts) {
+            // unlock for read message
+            pthread_mutex_unlock(&mutex_msg);
+        }
+
         return error;
+    }
     struct pam_response *response = calloc (msg_length, sizeof (struct pam_response));
     for (int i = 0; i < msg_length; i++)
     {
         struct pam_response *r = &response[i];
         // callers of this function inside pam will expect to be able to call
         // free() on the strings we give back.  So alloc with malloc.
-        r->resp = read_string_full (malloc);
-        read_data (&r->resp_retcode, sizeof (r->resp_retcode));
+	if (n_prompts) {
+            r->resp = read_prompt_string_full (malloc);
+            read_prompt_data (&r->resp_retcode, sizeof (r->resp_retcode));
+	} else {
+            r->resp = read_string_full (malloc);
+            read_data (&r->resp_retcode, sizeof (r->resp_retcode));
+	}
+    }
+
+    if (!n_prompts) {
+        // unlock for read message
+        pthread_mutex_unlock(&mutex_msg);
     }
 
     *resp = response;
@@ -262,22 +334,24 @@ session_child_run (int argc, char **argv)
     close (fd);
 
     /* Get the pipe from the daemon */
-    if (argc != 4)
+    if (argc != 5)
     {
-        g_printerr ("Usage: lightdm --session-child INPUTFD OUTPUTFD\n");
+        g_printerr ("Usage: lightdm --session-child INPUTFD OUTPUTFD INPUTFD_PROMPT\n");
         return EXIT_FAILURE;
     }
     from_daemon_output = atoi (argv[2]);
     to_daemon_input = atoi (argv[3]);
-    if (from_daemon_output == 0 || to_daemon_input == 0)
+    from_daemon_output_prompt = atoi (argv[4]);
+    if (from_daemon_output == 0 || to_daemon_input == 0 || from_daemon_output_prompt == 0)
     {
-        g_printerr ("Invalid file descriptors %s %s\n", argv[2], argv[3]);
+        g_printerr ("Invalid file descriptors %s %s %s\n", argv[2], argv[3], argv[4]);
         return EXIT_FAILURE;
     }
 
     /* Don't let these pipes leak to the command we will run */
     fcntl (from_daemon_output, F_SETFD, FD_CLOEXEC);
     fcntl (to_daemon_input, F_SETFD, FD_CLOEXEC);
+    fcntl (from_daemon_output_prompt, F_SETFD, FD_CLOEXEC);
 
     /* Read a version number so we can handle upgrades (i.e. a newer version of session child is run for an old daemon */
     int version;
@@ -330,7 +404,10 @@ session_child_run (int argc, char **argv)
     {
         const gchar *new_username;
 
+        // init mutex for pam_conv_cb
+        pthread_mutex_init(&mutex_msg, 0);
         authentication_result = pam_authenticate (pam_handle, 0);
+        pthread_mutex_destroy(&mutex_msg);
 
         /* See what user we ended up as */
         if (pam_get_item (pam_handle, PAM_USER, (const void **) &new_username) != PAM_SUCCESS)

@@ -52,6 +52,7 @@ typedef struct
     /* Pipes to talk to child */
     int to_child_input;
     int from_child_output;
+    int to_child_prompt_input;
     GIOChannel *from_child_channel;
     guint from_child_watch;
     guint child_watch;
@@ -77,6 +78,9 @@ typedef struct
     /* Messages being requested by PAM */
     int messages_length;
     struct pam_message *messages;
+    /* Prompt Messages being requested by PAM */
+    int prompt_messages_length;
+    struct pam_message *prompt_messages;
 
     /* Authentication result from PAM */
     gboolean authentication_started;
@@ -383,12 +387,29 @@ write_data (Session *session, const void *buf, size_t count)
 }
 
 static void
+write_prompt_data (Session *session, const void *buf, size_t count)
+{
+    SessionPrivate *priv = session_get_instance_private (session);
+    if (write (priv->to_child_prompt_input, buf, count) != count)
+        l_warning (session, "Error writing prompt to session: %s", strerror (errno));
+}
+
+static void
 write_string (Session *session, const char *value)
 {
     int length = value ? strlen (value) : -1;
     write_data (session, &length, sizeof (length));
     if (value)
         write_data (session, value, sizeof (char) * length);
+}
+
+static void
+write_prompt_string (Session *session, const char *value)
+{
+    int length = value ? strlen (value) : -1;
+    write_prompt_data (session, &length, sizeof (length));
+    if (value)
+        write_prompt_data (session, value, sizeof (char) * length);
 }
 
 static void
@@ -534,6 +555,8 @@ from_child_cb (GIOChannel *source, GIOCondition condition, gpointer data)
     }
     else
     {
+        gboolean n_prompts = 0;
+
         priv->messages_length = 0;
         read_from_child (session, &priv->messages_length, sizeof (priv->messages_length));
         priv->messages = calloc (priv->messages_length, sizeof (struct pam_message));
@@ -542,6 +565,15 @@ from_child_cb (GIOChannel *source, GIOCondition condition, gpointer data)
             struct pam_message *m = &priv->messages[i];
             read_from_child (session, &m->msg_style, sizeof (m->msg_style));
             m->msg = read_string_from_child (session);
+
+            if (m->msg_style == PAM_PROMPT_ECHO_OFF || m->msg_style == PAM_PROMPT_ECHO_ON)
+                ++n_prompts;
+        }
+
+        // for prompt message
+        if (n_prompts) {
+            priv->prompt_messages_length = priv->messages_length;
+            priv->prompt_messages = priv->messages;
         }
 
         l_debug (session, "Got %d message(s) from PAM", priv->messages_length);
@@ -585,15 +617,17 @@ session_real_start (Session *session)
         display_server_connect_session (priv->display_server, session);
 
     /* Create pipes to talk to the child */
-    int to_child_pipe[2], from_child_pipe[2];
-    if (pipe (to_child_pipe) < 0 || pipe (from_child_pipe) < 0)
+    int to_child_pipe[2], from_child_pipe[2], to_child_prompt_pipe[2];
+    if (pipe (to_child_pipe) < 0 || pipe (from_child_pipe) < 0 || pipe (to_child_prompt_pipe) < 0)
     {
         g_warning ("Failed to create pipe to communicate with session process: %s", strerror (errno));
         return FALSE;
     }
     int to_child_output = to_child_pipe[0];
+    int to_child_prompt_output = to_child_prompt_pipe[0];
     priv->to_child_input = to_child_pipe[1];
     priv->from_child_output = from_child_pipe[0];
+    priv->to_child_prompt_input = to_child_prompt_pipe[1];
     int from_child_input = from_child_pipe[1];
     priv->from_child_channel = g_io_channel_unix_new (priv->from_child_output);
     priv->from_child_watch = g_io_add_watch (priv->from_child_channel, G_IO_IN | G_IO_HUP, from_child_cb, session);
@@ -601,6 +635,7 @@ session_real_start (Session *session)
     /* Don't allow the daemon end of the pipes to be accessed in child processes */
     fcntl (priv->to_child_input, F_SETFD, FD_CLOEXEC);
     fcntl (priv->from_child_output, F_SETFD, FD_CLOEXEC);
+    fcntl (priv->to_child_prompt_input, F_SETFD, FD_CLOEXEC);
 
     /* Create the guest account if it is one */
     if (priv->is_guest && priv->username == NULL)
@@ -613,6 +648,7 @@ session_real_start (Session *session)
     /* Run the child */
     g_autofree gchar *arg0 = g_strdup_printf ("%d", to_child_output);
     g_autofree gchar *arg1 = g_strdup_printf ("%d", from_child_input);
+    g_autofree gchar *arg2 = g_strdup_printf ("%d", to_child_prompt_output);
     priv->pid = fork ();
     if (priv->pid == 0)
     {
@@ -620,7 +656,7 @@ session_real_start (Session *session)
         execlp ("lightdm",
                 "lightdm",
                 "--session-child",
-                arg0, arg1, NULL);
+                arg0, arg1, arg2, NULL);
         _exit (EXIT_FAILURE);
     }
 
@@ -642,6 +678,7 @@ session_real_start (Session *session)
     /* Close the ends of the pipes we don't need */
     close (to_child_output);
     close (from_child_input);
+    close (to_child_prompt_output);
 
     /* Indicate what version of the protocol we are using */
     int version = 3;
@@ -702,6 +739,11 @@ session_respond (Session *session, struct pam_response *response)
         write_data (session, &response[i].resp_retcode, sizeof (response[i].resp_retcode));
     }
 
+    if (priv->messages == priv->prompt_messages) {
+        l_warning (session, "%s", "Current message is prompt message");
+        return;
+    }
+
     /* Delete the old messages */
     for (int i = 0; i < priv->messages_length; i++)
         g_free ((char *) priv->messages[i].msg);
@@ -711,12 +753,51 @@ session_respond (Session *session, struct pam_response *response)
 }
 
 void
+session_prompt_respond (Session *session, struct pam_response *response)
+{
+
+    SessionPrivate *priv = session_get_instance_private (session);
+
+    g_return_if_fail (session != NULL);
+
+    int error = PAM_SUCCESS;
+    write_prompt_data (session, &error, sizeof (error));
+    for (int i = 0; i < priv->prompt_messages_length; i++)
+    {
+        write_prompt_string (session, response[i].resp);
+        write_prompt_data (session, &response[i].resp_retcode, sizeof (response[i].resp_retcode));
+    }
+
+    // clear
+    if (priv->messages == priv->prompt_messages) {
+        priv->messages = NULL;
+        priv->messages_length = 0;
+    }
+
+    /* Delete the old messages */
+    for (int i = 0; i < priv->prompt_messages_length; i++)
+        g_free ((char *) priv->prompt_messages[i].msg);
+    g_free (priv->prompt_messages);
+    priv->prompt_messages = NULL;
+    priv->prompt_messages_length = 0;
+}
+
+void
 session_respond_error (Session *session, int error)
 {
     g_return_if_fail (session != NULL);
     g_return_if_fail (error != PAM_SUCCESS);
 
     write_data (session, &error, sizeof (error));
+}
+
+void
+session_prompt_respond_error (Session *session, int error)
+{
+    g_return_if_fail (session != NULL);
+    g_return_if_fail (error != PAM_SUCCESS);
+
+    write_prompt_data (session, &error, sizeof (error));
 }
 
 int
@@ -733,6 +814,22 @@ session_get_messages (Session *session)
     SessionPrivate *priv = session_get_instance_private (session);
     g_return_val_if_fail (session != NULL, NULL);
     return priv->messages;
+}
+
+int
+session_get_prompt_messages_length(Session *session)
+{
+    SessionPrivate *priv = session_get_instance_private (session);
+    g_return_val_if_fail (session != NULL, 0);
+    return priv->prompt_messages_length;
+}
+
+const struct pam_message *
+session_get_prompt_messages(Session *session)
+{
+    SessionPrivate *priv = session_get_instance_private (session);
+    g_return_val_if_fail (session != NULL, NULL);
+    return priv->prompt_messages;
 }
 
 gboolean
@@ -985,6 +1082,7 @@ session_init (Session *session)
     priv->log_mode = LOG_MODE_BACKUP_AND_TRUNCATE;
     priv->to_child_input = -1;
     priv->from_child_output = -1;
+    priv->to_child_prompt_input = -1;
 }
 
 static void
@@ -999,6 +1097,7 @@ session_finalize (GObject *object)
         kill (priv->pid, SIGKILL);
     close (priv->to_child_input);
     close (priv->from_child_output);
+    close (priv->to_child_prompt_input);
     g_clear_pointer (&priv->from_child_channel, g_io_channel_unref);
     if (priv->from_child_watch)
         g_source_remove (priv->from_child_watch);

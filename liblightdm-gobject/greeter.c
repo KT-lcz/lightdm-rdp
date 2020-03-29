@@ -652,7 +652,6 @@ handle_prompt_authentication (LightDMGreeter *greeter, guint8 *message, gsize me
 
     g_list_free_full (priv->responses_received, g_free);
     priv->responses_received = NULL;
-    priv->n_responses_waiting = 0;
 
     guint32 n_messages = read_int (message, message_length, offset);
     g_debug ("Prompt user with %d message(s)", n_messages);
@@ -713,6 +712,8 @@ handle_end_authentication (LightDMGreeter *greeter, guint8 *message, gsize messa
     priv->is_authenticated = (return_code == 0);
 
     priv->in_authentication = FALSE;
+    // reset
+    priv->n_responses_waiting = 0;
     g_signal_emit (G_OBJECT (greeter), signals[AUTHENTICATION_COMPLETE], 0);
 }
 
@@ -1330,6 +1331,8 @@ lightdm_greeter_authenticate (LightDMGreeter *greeter, const gchar *username, GE
     priv->cancelling_authentication = FALSE;
     priv->authenticate_sequence_number++;
     priv->in_authentication = TRUE;
+    // reset
+    priv->n_responses_waiting = 0;
     priv->is_authenticated = FALSE;
     if (username != priv->authentication_user)
     {
