@@ -16,6 +16,41 @@
 #include <glib/gi18n.h>
 #include <gio/gio.h>
 
+#define LOCKFRONT_NAME "com.deepin.dde.lockFront"
+
+static int
+handle_call_lock_front()
+{
+    g_autoptr(GError) pLockError = NULL;
+    GDBusProxy *pLockFront = g_dbus_proxy_new_for_bus_sync(
+        G_BUS_TYPE_SESSION,
+        G_DBUS_PROXY_FLAGS_NONE,
+        NULL,
+        LOCKFRONT_NAME,
+        "/com/deepin/dde/lockFront",
+        LOCKFRONT_NAME,
+        NULL,
+        &pLockError);
+    if (!pLockFront) 
+    {
+        g_printerr("something error happend. %s. %s, %d", LOCKFRONT_NAME, pLockError->message, pLockError->code);
+        return EXIT_FAILURE;
+    }
+    if (!g_dbus_proxy_call_sync(
+            pLockFront,
+            "Show",
+            g_variant_new("()"),
+            G_DBUS_CALL_FLAGS_NONE,
+            -1,
+            NULL,
+            &pLockError)) 
+    {
+        g_printerr("something error happend. %s. %s, %d", LOCKFRONT_NAME, pLockError->message, pLockError->code);
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
+}
+
 static GBusType bus_type = G_BUS_TYPE_SYSTEM;
 static GDBusProxy *dm_proxy, *seat_proxy = NULL;
 
@@ -259,16 +294,23 @@ main (int argc, char **argv)
             return EXIT_FAILURE;
         }
 
-        if (!g_dbus_proxy_call_sync (get_seat_proxy (),
-                                     "Lock",
-                                     g_variant_new ("()"),
-                                     G_DBUS_CALL_FLAGS_NONE,
-                                     -1,
-                                     NULL,
-                                     &error))
+        if (g_file_test("/etc/deepin-version", G_FILE_TEST_EXISTS)) 
         {
-            g_printerr ("Unable to lock seat: %s\n", error->message);
-            return EXIT_FAILURE;
+            return handle_call_lock_front();
+        } 
+        else 
+        {
+            if (!g_dbus_proxy_call_sync(get_seat_proxy(),
+                                        "Lock",
+                                        g_variant_new("()"),
+                                        G_DBUS_CALL_FLAGS_NONE,
+                                        -1,
+                                        NULL,
+                                        &error))
+            {
+                g_printerr("Unable to lock seat: %s\n", error->message);
+                return EXIT_FAILURE;
+            }
         }
         return EXIT_SUCCESS;
     }
