@@ -16,6 +16,9 @@ typedef struct
     /* Session type */
     gchar *session_type;
 
+    /* name */
+    gchar **name;
+
     /* Desktop names */
     gchar **desktop_names;
 
@@ -50,6 +53,8 @@ session_config_new_from_file (const gchar *filename, const gchar *default_sessio
     priv->session_type = g_key_file_get_string (desktop_file, G_KEY_FILE_DESKTOP_GROUP, "X-LightDM-Session-Type", NULL);
     if (!priv->session_type)
         priv->session_type = g_strdup (default_session_type);
+
+    priv->name = g_key_file_get_string_list (desktop_file, G_KEY_FILE_DESKTOP_GROUP, "Name", NULL, NULL);
 
     priv->desktop_names = g_key_file_get_string_list (desktop_file, G_KEY_FILE_DESKTOP_GROUP, "DesktopNames", NULL, NULL);
     if (!priv->desktop_names)
@@ -91,6 +96,14 @@ session_config_get_desktop_names (SessionConfig *config)
     SessionConfigPrivate *priv = session_config_get_instance_private (config);
     g_return_val_if_fail (config != NULL, NULL);
     return priv->desktop_names;
+}
+
+gchar **
+session_config_get_name (SessionConfig *config)
+{
+    SessionConfigPrivate *priv = session_config_get_instance_private (config);
+    g_return_val_if_fail (config != NULL, NULL);
+    return priv->name;
 }
 
 gboolean

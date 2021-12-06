@@ -982,7 +982,16 @@ configure_session (Session *session, SessionConfig *config, const gchar *session
 {
     session_set_config (session, config);
     session_set_env (session, "XDG_SESSION_DESKTOP", session_name);
-    session_set_env (session, "DESKTOP_SESSION", session_name);
+
+    gchar **name = session_config_get_name (config);
+    if (name)
+    {
+        g_autofree gchar *value = g_strjoinv (":", name);
+        session_set_env (session, "DESKTOP_SESSION", value);
+    }
+    else
+        session_set_env (session, "DESKTOP_SESSION", session_name);
+
     session_set_env (session, "GDMSESSION", session_name);
     gchar **desktop_names = session_config_get_desktop_names (config);
     if (desktop_names)

@@ -41,6 +41,8 @@ const gchar *session_config_get_command (SessionConfig *config);
 
 const gchar *session_config_get_session_type (SessionConfig *config);
 
+gchar **session_config_get_name (SessionConfig *config);
+
 gchar **session_config_get_desktop_names (SessionConfig *config);
 
 gboolean session_config_get_allow_greeter (SessionConfig *config);
