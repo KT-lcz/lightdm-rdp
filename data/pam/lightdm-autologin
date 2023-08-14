@@ -9,6 +9,10 @@ auth      requisite pam_nologin.so
 session      required pam_env.so readenv=1
 session      required pam_env.so readenv=1 envfile=/etc/default/locale
 
+# Unlock keyring when user auto login
+-auth        optional   pam_deepin_keyring.so
+-auth        optional   pam_gnome_keyring.so
+
 # Allow access without authentication
 auth      required pam_succeed_if.so user != root quiet_success
 auth      required pam_permit.so
@@ -34,6 +38,9 @@ session [success=ok ignore=ignore module_unknown=ignore default=bad] pam_selinux
 # is disabled, this returns success.)
 
 # Can't change password
+# Unlock keyring when user no passwd login
+-session  optional  pam_gnome_keyring.so auto_start
+
 password  required pam_deny.so
 
 @include common-password

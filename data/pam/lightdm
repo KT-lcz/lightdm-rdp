@@ -3,16 +3,18 @@
 # Block login if they are globally disabled
 auth      requisite pam_nologin.so
 
-#Support nopasswdlogin
-auth      sufficient pam_succeed_if.so user ingroup nopasswdlogin
-
 # Load environment from /etc/environment and ~/.pam_environment
 session      required pam_env.so readenv=1
 session      required pam_env.so readenv=1 envfile=/etc/default/locale
 
-@include common-auth
-
--auth  optional pam_gnome_keyring.so
+# Support nopasswdlogin, if success, only need skip common-auth
+auth      [success=1 new_authtok_reqd=done default=ignore] pam_succeed_if.so user ingroup nopasswdlogin
+# common-auth
+auth      substack common-auth
+auth      required pam_permit.so
+# Unlock keyring when user authenticate
+-auth        optional   pam_deepin_keyring.so
+-auth        optional   pam_gnome_keyring.so
 
 @include common-account
 
@@ -34,6 +36,7 @@ session [success=ok ignore=ignore module_unknown=ignore default=bad] pam_selinux
 # When the module is present, "required" would be sufficient (When SELinux
 # is disabled, this returns success.)
 
--session optional        pam_gnome_keyring.so auto_start
+-session    optional    pam_gnome_keyring.so auto_start
+-session    optional    pam_deepin_keyring.so
 
 @include common-password
