@@ -1552,8 +1552,9 @@ seat_switch_to_user (Seat *seat, const gchar *username, const gchar *session_nam
         return FALSE;
 
     /* If we're already on this session, then ignore */
+    gboolean can_switch_active_user = config_get_boolean (config_get_instance (), "LightDM", "allow-switch-active-session");
     Session *session = find_user_session (seat, username, NULL);
-    if (session && session == priv->active_session)
+    if (!can_switch_active_user && session && session == priv->active_session)
         return TRUE;
 
     l_debug (seat, "Switching to user %s", username);

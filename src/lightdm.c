@@ -782,6 +782,8 @@ main (int argc, char **argv)
         config_set_boolean (config_get_instance (), "Seat:*", "start-session", TRUE);
     if (!config_has_key (config_get_instance (), "Seat:*", "allow-user-switching"))
         config_set_boolean (config_get_instance (), "Seat:*", "allow-user-switching", TRUE);
+    if (!config_has_key (config_get_instance (), "Seat:*", "allow-switch-active-session"))
+        config_set_boolean (config_get_instance (), "Seat:*", "allow-switch-active-session", FALSE);
     if (!config_has_key (config_get_instance (), "Seat:*", "allow-guest"))
         config_set_boolean (config_get_instance (), "Seat:*", "allow-guest", TRUE);
     if (!config_has_key (config_get_instance (), "Seat:*", "greeter-allow-guest"))
