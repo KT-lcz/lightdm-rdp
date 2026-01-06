@@ -54,6 +54,8 @@ typedef struct
     /* The session belonging to the active greeter user */
     Session *next_session;
 
+    Session* wayland_mode_session_to_activate;
+
     /* The session to set active when it starts */
     Session *session_to_activate;
 
@@ -475,6 +477,21 @@ display_server_stopped_cb (DisplayServer *display_server, Seat *seat)
         return;
     }
 
+    if (priv->wayland_mode_session_to_activate) {
+        l_debug(seat, "wayland mode, start wayland display server");
+
+        Session* session = priv->wayland_mode_session_to_activate;
+        priv->wayland_mode_session_to_activate = NULL;
+
+        DisplayServer *display_server = create_display_server (seat, session);
+        session_set_display_server (session, display_server);
+        if (!start_display_server (seat, display_server))
+        {
+            l_debug (seat, "Failed to start display server for new session");
+        }
+        return;
+    }
+
     /* Stop all sessions on this display server */
     GList *list = g_list_copy (priv->sessions);
     for (GList *link = list; link; link = link->next)
@@ -794,6 +811,12 @@ session_stopped_cb (Session *session, Seat *seat)
     {
         check_stopped (seat);
         g_object_unref (session);
+        return;
+    }
+
+    if (priv->wayland_mode_session_to_activate) {
+        l_debug(seat, "wayland mode, stop display server");
+        display_server_stop(display_server);
         return;
     }
 
@@ -1229,15 +1252,21 @@ greeter_start_session_cb (Greeter *greeter, SessionType type, const gchar *sessi
         }
     }
 
-    /* Otherwise start a new display server for this session */
-    DisplayServer *display_server = create_display_server (seat, session);
-    session_set_display_server (session, display_server);
-    if (!start_display_server (seat, display_server))
-    {
-        l_debug (seat, "Failed to start display server for new session");
-        return FALSE;
+    if (strcmp("wayland", session_get_session_type(session)) == 0) {
+        l_debug(seat, "wayland mode, stop greeter session");
+        priv->wayland_mode_session_to_activate = session;
+        session_stop(greeter_session);
+    } else {
+        /* Otherwise start a new display server for this session */
+        DisplayServer *display_server = create_display_server (seat, session);
+        session_set_display_server (session, display_server);
+        if (!start_display_server (seat, display_server))
+        {
+            l_debug (seat, "Failed to start display server for new session");
+            return FALSE;
+        }
     }
-
+    
     return TRUE;
 }
 
@@ -1911,6 +1940,7 @@ seat_init (Seat *seat)
 
     priv->properties = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
     priv->share_display_server = TRUE;
+    priv->wayland_mode_session_to_activate = NULL;
 }
 
 static void
@@ -1937,6 +1967,7 @@ seat_finalize (GObject *object)
     g_clear_object (&priv->next_session);
     g_clear_object (&priv->session_to_activate);
     g_clear_object (&priv->replacement_greeter);
+    g_clear_object (&priv->wayland_mode_session_to_activate);
 
     G_OBJECT_CLASS (seat_parent_class)->finalize (object);
 }

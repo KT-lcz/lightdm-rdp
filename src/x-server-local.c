@@ -153,11 +153,18 @@ display_number_in_use (guint display_number)
     return in_use;
 }
 
+static gboolean
+socket_number_in_use (guint number)
+{
+    g_autofree gchar *path = g_strdup_printf ("/tmp/.X11-unix/X%d", number);
+    return g_file_test (path, G_FILE_TEST_EXISTS);
+}
+
 guint
 x_server_local_get_unused_display_number (void)
 {
     guint number = config_get_integer (config_get_instance (), "LightDM", "minimum-display-number");
-    while (display_number_in_use (number))
+    while (display_number_in_use (number) || socket_number_in_use(number))
         number++;
 
     display_numbers = g_list_append (display_numbers, GUINT_TO_POINTER (number));
