@@ -329,6 +329,9 @@ stat64 (const char *path, struct stat64 *buf)
     return _stat64 (new_path, buf);
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-prototypes"
+
 int
 __xstat (int version, const char *path, struct stat *buf)
 {
@@ -364,6 +367,8 @@ __fxstatat64(int ver, int dirfd, const char *pathname, struct stat64 *buf, int f
     g_autofree gchar *new_path = redirect_path (pathname);
     return ___fxstatat64 (ver, dirfd, new_path, buf, flags);
 }
+
+#pragma GCC diagnostic pop
 
 DIR *
 opendir (const char *name)
