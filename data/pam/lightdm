@@ -3,6 +3,9 @@
 # Block login if they are globally disabled
 auth      requisite pam_nologin.so
 
+#Support nopasswdlogin
+auth      sufficient pam_succeed_if.so user ingroup nopasswdlogin
+
 # Load environment from /etc/environment and ~/.pam_environment
 session      required pam_env.so readenv=1
 session      required pam_env.so readenv=1 envfile=/etc/default/locale
