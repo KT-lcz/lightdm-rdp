@@ -467,6 +467,7 @@ read_string_from_child (Session *session)
     return value;
 }
 
+
 static void
 session_watch_cb (GPid pid, gint status, gpointer data)
 {
@@ -494,6 +495,7 @@ session_watch_cb (GPid pid, gint status, gpointer data)
         g_signal_emit (G_OBJECT (session), signals[AUTHENTICATION_COMPLETE], 0);
     }
 
+    g_clear_pointer (&priv->login1_session_id, g_free);
     g_signal_emit (G_OBJECT (session), signals[STOPPED], 0);
 
     /* Delete account if it is a guest one */
@@ -960,6 +962,7 @@ session_real_run (Session *session)
     for (gsize i = 0; i < argc; i++)
         write_string (session, priv->argv[i]);
 
+    g_free (priv->login1_session_id);
     priv->login1_session_id = read_string_from_child (session);
     priv->console_kit_cookie = read_string_from_child (session);
 }
@@ -1132,6 +1135,7 @@ session_class_init (SessionClass *klass)
     klass->run = session_real_run;
     klass->stop = session_real_stop;
     object_class->finalize = session_finalize;
+
 
     signals[CREATE_GREETER] =
         g_signal_new (SESSION_SIGNAL_CREATE_GREETER,

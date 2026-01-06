@@ -119,7 +119,7 @@ static gboolean
 vt_is_used_by_dir(gint number)
 {
     char *session_path = "/run/systemd/sessions";
-    FILE *session_dir = NULL;
+    DIR *session_dir = NULL;
     struct dirent * dir_info = NULL;
 
     session_dir = opendir(session_path);

@@ -333,6 +333,7 @@ config_init (Configuration *config)
     g_hash_table_insert (config->priv->lightdm_keys, "start-default-seat", GINT_TO_POINTER (KEY_SUPPORTED));
     g_hash_table_insert (config->priv->lightdm_keys, "greeter-user", GINT_TO_POINTER (KEY_SUPPORTED));
     g_hash_table_insert (config->priv->lightdm_keys, "minimum-display-number", GINT_TO_POINTER (KEY_SUPPORTED));
+    g_hash_table_insert (config->priv->lightdm_keys, "minimum-remote-display-number", GINT_TO_POINTER (KEY_SUPPORTED));
     g_hash_table_insert (config->priv->lightdm_keys, "minimum-vt", GINT_TO_POINTER (KEY_SUPPORTED));
     g_hash_table_insert (config->priv->lightdm_keys, "lock-memory", GINT_TO_POINTER (KEY_SUPPORTED));
     g_hash_table_insert (config->priv->lightdm_keys, "user-authority-in-system-dir", GINT_TO_POINTER (KEY_SUPPORTED));

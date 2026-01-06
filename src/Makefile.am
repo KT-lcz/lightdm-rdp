@@ -10,6 +10,8 @@ lightdm_SOURCES = \
 	display-manager.h \
 	display-manager-service.c \
 	display-manager-service.h \
+	drd-dbus-lightdm.c \
+	drd-dbus-lightdm.h \
 	display-server.c \
 	display-server.h \
 	greeter.c \
@@ -31,6 +33,12 @@ lightdm_SOURCES = \
 	plymouth.h \
 	process.c \
 	process.h \
+	remote-display-factory.c \
+	remote-display-factory.h \
+	seat-config.c \
+	seat-config.h \
+	seat-rdp.c \
+	seat-rdp.h \
 	seat.c \
 	seat.h \
 	seat-local.c \

@@ -1,0 +1,27 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+  <interface name="org.deepin.DisplayManager.RemoteDisplayFactory.Session">
+    <property name="user_name" type="s" access="read"/>
+    <property name="address" type="s" access="read"/>
+    <property name="session_id" type="s" access="read"/>
+    <property name="client_id" type="s" access="read"/>
+  </interface>
+  <interface name="org.deepin.DisplayManager.RemoteDisplayFactory">
+    <method name="CreateRemoteGreeterDisplay">
+      <arg name="client_id" direction="in" type="s"/>
+      <arg name="width" direction="in" type="u"/>
+      <arg name="height" direction="in" type="u"/>
+      <arg name="address" direction="in" type="s"/>
+      <arg name="session_path" direction="out" type="o"/>
+    </method>
+    <method name="CreateSingleLogonSession">
+      <arg name="client_id" direction="in" type="s"/>
+      <arg name="width" direction="in" type="u"/>
+      <arg name="height" direction="in" type="u"/>
+      <annotation name="org.gtk.GDBus.C.UnixFD" value="true" />
+      <arg name="auth_fd" direction="in" type="h"/>
+      <arg name="address" direction="in" type="s"/>
+      <arg name="session_path" direction="out" type="o"/>
+    </method>
+  </interface>
+</node>
