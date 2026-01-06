@@ -525,9 +525,11 @@ handle_authenticate (Greeter *greeter, guint32 sequence_number, const gchar *use
 
     /* Use non-interactive service for autologin user */
     const gchar *autologin_username = g_hash_table_lookup (priv->hints, "autologin-user");
+    const gchar *quicklogin_enabled = g_hash_table_lookup (priv->hints, "quicklogin-enabled");
     const gchar *service;
     gboolean is_interactive;
-    if (autologin_username != NULL && g_strcmp0 (username, autologin_username) == 0)
+    if ((autologin_username != NULL && g_strcmp0 (username, autologin_username) == 0)
+        || (quicklogin_enabled != NULL && g_strcmp0 (quicklogin_enabled, "true") == 0))
     {
         service = priv->autologin_pam_service;
         is_interactive = FALSE;

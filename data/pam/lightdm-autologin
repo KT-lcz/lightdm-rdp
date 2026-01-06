@@ -40,7 +40,7 @@ session [success=ok ignore=ignore module_unknown=ignore default=bad] pam_selinux
 # Can't change password
 # Unlock keyring when user no passwd login
 -session  optional  pam_gnome_keyring.so auto_start
-
+-session  optional  pam_deepin_keyring.so
 password  required pam_deny.so
 
 @include common-password

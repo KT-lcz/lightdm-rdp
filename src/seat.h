@@ -118,6 +118,10 @@ void seat_stop (Seat *seat);
 
 gboolean seat_get_is_stopping (Seat *seat);
 
+const gchar *get_deepin_greeter_last_username (void);
+
+gboolean is_username_in_quicklogin_users (const gchar* username);
+
 G_END_DECLS
 
 #endif /* SEAT_H_ */

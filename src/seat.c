@@ -18,6 +18,7 @@
 #include "guest-account.h"
 #include "greeter-session.h"
 #include "session-config.h"
+#include "common/user-list.h"
 
 enum {
     SESSION_ADDED,
@@ -1192,6 +1193,11 @@ greeter_start_session_cb (Greeter *greeter, SessionType type, const gchar *sessi
             if (!session_name && g_strcmp0 (user_get_name (user), autologin_username) == 0)
                 session_name = seat_get_string_property (seat, "autologin-session");
 
+            /* Override session for quicklogin if configured */
+            const gchar *quicklogin_enabled = seat_get_string_property (seat, "quicklogin-enabled");
+            if (!session_name && g_strcmp0 (quicklogin_enabled, "true") == 0)
+                session_name = seat_get_string_property (seat, "quicklogin-session");
+
             if (!session_name)
                 session_name = user_get_xsession (user);
             language = user_get_language (user);
@@ -1328,6 +1334,12 @@ create_greeter_session (Seat *seat)
     const gchar *autologin_username = seat_get_string_property (seat, "autologin-user");
     if (g_strcmp0 (autologin_username, "") == 0)
         autologin_username = NULL;
+
+    /* Configure for quick login */
+    const gchar *quicklogin_enabled = seat_get_string_property (seat, "quicklogin-enabled");
+    if (g_strcmp0 (quicklogin_enabled, "") == 0)
+        quicklogin_enabled = NULL;
+
     const gchar *autologin_session = seat_get_string_property (seat, "autologin-session");
     if (g_strcmp0 (autologin_session, "") == 0)
         autologin_session = NULL;
@@ -1339,6 +1351,8 @@ create_greeter_session (Seat *seat)
         greeter_set_hint (greeter, "autologin-timeout", value);
         if (autologin_username)
             greeter_set_hint (greeter, "autologin-user", autologin_username);
+        if (quicklogin_enabled)
+            greeter_set_hint (greeter, "quicklogin-enabled", quicklogin_enabled);
         if (autologin_session)
             greeter_set_hint (greeter, "autologin-session", autologin_session);
         if (autologin_guest)
@@ -1714,6 +1728,86 @@ seat_get_is_stopping (Seat *seat)
     return priv->stopping;
 }
 
+const gchar *
+get_deepin_greeter_last_username (void)
+{
+    GError *error = NULL;
+    gchar *name = NULL;
+
+    g_autoptr(GKeyFile) key_file = g_key_file_new();
+    if (!g_key_file_load_from_file(key_file, "/var/lib/lightdm/lightdm-deepin-greeter/state_user", G_KEY_FILE_NONE, &error))
+    {
+        g_debug("Failed to load key file: %s", error->message);
+        return NULL;
+    }
+
+    g_autofree gchar *value = g_key_file_get_value(key_file, "General", "last-user", &error);
+    if (error != NULL)
+    {
+        g_debug("Failed to get value: %s", error->message);
+        return NULL;
+    }
+    // 删除"{"和"}"
+    if (value[0] == '{' && value[strlen(value) - 1] == '}')
+    {
+        value = g_strndup(value + 1, strlen(value) - 2);
+    }
+
+
+    gchar **tokens = g_strsplit(value, ",", -1);
+    for (gchar **token = tokens; *token; token++)
+    {
+        gchar **pair = g_strsplit(*token, ":", -1);
+        gchar *key = g_strstrip(pair[0]);
+        gchar *val = g_strstrip(pair[1]);
+
+        // Find the "Name" key and extract its value
+        if (g_strcmp0(key, "\"Name\"") == 0)
+        {
+            name = g_strstrip(g_strndup(val + 1, strlen(val) - 2));
+            break;
+        }
+
+        g_strfreev(pair);
+    }
+
+    g_strfreev(tokens);
+    return name;
+}
+
+gboolean
+is_username_in_quicklogin_users (const gchar* username)
+{
+    GError *error = NULL;
+    gboolean result = FALSE;
+
+    g_autoptr(GKeyFile) key_file = g_key_file_new();
+    if (!g_key_file_load_from_file(key_file, "/var/lib/lightdm/lightdm-deepin-greeter/state_user", G_KEY_FILE_NONE, &error))
+    {
+        g_debug("Failed to load key file: %s", error->message);
+        return result;
+    }
+
+    g_autofree gchar *value = g_key_file_get_value(key_file, "General", "quicklogin-users", &error);
+    if (error != NULL)
+    {
+        g_debug("Failed to get value: %s", error->message);
+        return result;
+    }
+
+    gchar **tokens = g_strsplit(value, ";", -1);
+    for (gchar** user = tokens; *user != NULL; user++) {
+        if (g_strcmp0(g_strstrip(*user), username) == 0 && *user != NULL) {
+            result = TRUE;
+            break;
+        }
+    }
+
+    g_strfreev(tokens);
+
+    return result;
+}
+
 static void
 seat_real_setup (Seat *seat)
 {
@@ -1728,6 +1822,10 @@ seat_real_start (Seat *seat)
     const gchar *autologin_username = seat_get_string_property (seat, "autologin-user");
     if (g_strcmp0 (autologin_username, "") == 0)
         autologin_username = NULL;
+    /* Get quicklogin settings */
+    const gchar *quicklogin_enabled = seat_get_string_property (seat, "quicklogin-enabled");
+    if (g_strcmp0 (quicklogin_enabled, "") == 0)
+        quicklogin_enabled = NULL;
     int autologin_timeout = seat_get_integer_property (seat, "autologin-user-timeout");
     gboolean autologin_guest = seat_get_boolean_property (seat, "autologin-guest");
     gboolean autologin_in_background = seat_get_boolean_property (seat, "autologin-in-background");
@@ -1740,6 +1838,19 @@ seat_real_start (Seat *seat)
             session = create_guest_session (seat, NULL);
         else if (autologin_username != NULL)
             session = create_user_session (seat, autologin_username, TRUE);
+        /* Quicklogin enabled */
+        else if (g_strcmp0 (quicklogin_enabled, "true") == 0 )
+        {
+            g_debug("start quicklogin");
+            const gchar *last_username = get_deepin_greeter_last_username ();
+            if (last_username != NULL && is_username_in_quicklogin_users(last_username))
+            {
+                g_debug("quicklogin last username: %s", last_username);
+                session = create_user_session (seat, last_username, TRUE);
+            }
+            if (session)
+                session_set_env(session, "DDE_QUICKLOGIN", "true");
+        }
 
         if (session)
             session_set_pam_service (session, seat_get_string_property (seat, "pam-autologin-service"));
