@@ -328,6 +328,26 @@ x_server_local_get_authority_file_path (XServerLocal *server)
     return priv->authority_file;
 }
 
+gboolean
+x_server_local_set_display_number (XServerLocal *server, guint display_number)
+{
+    XServerLocalPrivate *priv = x_server_local_get_instance_private (server);
+
+    g_return_val_if_fail (server != NULL, FALSE);
+
+    if (priv->display_number == display_number)
+        return TRUE;
+
+    if (display_number_in_use (display_number))
+        return FALSE;
+
+    x_server_local_release_display_number (priv->display_number);
+    priv->display_number = display_number;
+    display_numbers = g_list_append (display_numbers, GUINT_TO_POINTER (display_number));
+
+    return TRUE;
+}
+
 static gchar *
 get_absolute_command (const gchar *command)
 {

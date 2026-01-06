@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <glib.h>
+#include <gio/gio.h>
 #include <glib/gi18n.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -35,6 +36,12 @@
 #include "user-list.h"
 #include "login1.h"
 #include "log-file.h"
+
+#include "seat-rdp.h"
+#include "session.h"
+#include "remote-display-factory.h"
+#include "seat-config.h"
+
 
 static gchar *config_path = NULL;
 static GMainLoop *loop = NULL;
@@ -115,47 +122,6 @@ log_init (void)
     g_debug ("Logging to %s", path);
 }
 
-static GList*
-get_config_sections (const gchar *seat_name)
-{
-    /* Load seat defaults first */
-    GList *config_sections = g_list_append (NULL, g_strdup ("Seat:*"));
-
-    g_auto(GStrv) groups = config_get_groups (config_get_instance ());
-    for (gchar **i = groups; *i; i++)
-    {
-        if (g_str_has_prefix (*i, "Seat:") && strcmp (*i, "Seat:*") != 0)
-        {
-            const gchar *seat_name_glob = *i + strlen ("Seat:");
-            if (g_pattern_match_simple (seat_name_glob, seat_name ? seat_name : ""))
-                config_sections = g_list_append (config_sections, g_strdup (*i));
-        }
-    }
-
-    return config_sections;
-}
-
-static void
-set_seat_properties (Seat *seat, const gchar *seat_name)
-{
-    GList *sections = get_config_sections (seat_name);
-    for (GList *link = sections; link; link = link->next)
-    {
-        const gchar *section = link->data;
-        g_auto(GStrv) keys = NULL;
-
-        keys = config_get_keys (config_get_instance (), section);
-
-        l_debug (seat, "Loading properties from config section %s", section);
-        for (gint i = 0; keys && keys[i]; i++)
-        {
-            g_autofree gchar *value = config_get_string (config_get_instance (), section, keys[i]);
-            seat_set_property (seat, keys[i], value);
-        }
-    }
-    g_list_free_full (sections, g_free);
-}
-
 static void
 signal_cb (Process *process, int signum)
 {
@@ -206,7 +172,7 @@ service_add_xlocal_seat_cb (DisplayManagerService *service, gint display_number)
     if (!seat)
         return NULL;
 
-    set_seat_properties (seat, NULL);
+    seat_config_apply (seat, NULL);
     g_autofree gchar *display_number_string = g_strdup_printf ("%d", display_number);
     seat_set_property (seat, "xserver-display-number", display_number_string);
 
@@ -244,7 +210,7 @@ display_manager_seat_removed_cb (DisplayManager *display_manager, Seat *seat)
 
     if (next_seat)
     {
-        set_seat_properties (next_seat, seat_get_name (seat));
+        seat_config_apply (next_seat, seat_get_name (seat));
 
         // We set this manually on default seat.  Let's port it over if needed.
         if (seat_get_boolean_property (seat, "exit-on-failure"))
@@ -271,7 +237,7 @@ xdmcp_session_cb (XDMCPServer *server, XDMCPSession *session)
     xdmcp_client_count++;
 
     seat_set_name (SEAT (seat), name);
-    set_seat_properties (SEAT (seat), NULL);
+    seat_config_apply (SEAT (seat), NULL);
     return display_manager_add_seat (display_manager, SEAT (seat));
 }
 
@@ -284,7 +250,7 @@ vnc_connection_cb (VNCServer *server, GSocket *connection)
     vnc_client_count++;
 
     seat_set_name (SEAT (seat), name);
-    set_seat_properties (SEAT (seat), NULL);
+    seat_config_apply (SEAT (seat), NULL);
     display_manager_add_seat (display_manager, SEAT (seat));
 }
 
@@ -406,7 +372,7 @@ add_login1_seat (Login1Seat *login1_seat)
 
     if (seat)
     {
-        set_seat_properties (seat, seat_name);
+        seat_config_apply (seat, seat_name);
 
         if (!login1_seat_get_can_multi_session (login1_seat))
         {
@@ -858,6 +824,7 @@ main (int argc, char **argv)
     display_manager = display_manager_new ();
     g_signal_connect (display_manager, DISPLAY_MANAGER_SIGNAL_STOPPED, G_CALLBACK (display_manager_stopped_cb), NULL);
     g_signal_connect (display_manager, DISPLAY_MANAGER_SIGNAL_SEAT_REMOVED, G_CALLBACK (display_manager_seat_removed_cb), NULL);
+    remote_display_factory_init (display_manager);
 
     if (config_get_boolean (config_get_instance (), "LightDM", "dbus-service"))
     {
@@ -907,7 +874,7 @@ main (int argc, char **argv)
             }
             if (seat)
             {
-                set_seat_properties (seat, NULL);
+                seat_config_apply (seat, NULL);
                 seat_set_property (seat, "exit-on-failure", "true");
                 if (!display_manager_add_seat (display_manager, seat))
                     return EXIT_FAILURE;
@@ -924,6 +891,8 @@ main (int argc, char **argv)
 
     /* Clean up shared data manager */
     shared_data_manager_cleanup ();
+
+    remote_display_factory_stop ();
 
     /* Clean up user list */
     common_user_list_cleanup ();

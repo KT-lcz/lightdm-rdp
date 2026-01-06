@@ -38,6 +38,14 @@ enum {
 };
 static guint signals[LAST_SIGNAL] = { 0 };
 
+enum
+{
+    PROP_0,
+    PROP_LOGIN1_SESSION_ID,
+    PROP_LAST
+};
+static GParamSpec *session_properties[PROP_LAST] = { NULL };
+
 typedef struct
 {
     /* Configuration for this session */
@@ -468,6 +476,37 @@ read_string_from_child (Session *session)
 }
 
 static void
+session_get_property (GObject *object, guint prop_id, GValue *value, GParamSpec *pspec)
+{
+    Session *session = SESSION (object);
+    SessionPrivate *priv = session_get_instance_private (session);
+
+    switch (prop_id)
+    {
+        case PROP_LOGIN1_SESSION_ID:
+            g_value_set_string (value, priv->login1_session_id);
+            break;
+        default:
+            G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+            break;
+    }
+}
+
+static void
+session_update_login1_session_id (Session *session, const gchar *value)
+{
+    SessionPrivate *priv = session_get_instance_private (session);
+
+    if (g_strcmp0 (priv->login1_session_id, value) == 0)
+        return;
+
+    g_free (priv->login1_session_id);
+    priv->login1_session_id = value ? g_strdup (value) : NULL;
+    g_object_notify_by_pspec (G_OBJECT (session), session_properties[PROP_LOGIN1_SESSION_ID]);
+}
+
+
+static void
 session_watch_cb (GPid pid, gint status, gpointer data)
 {
     Session *session = data;
@@ -494,6 +533,7 @@ session_watch_cb (GPid pid, gint status, gpointer data)
         g_signal_emit (G_OBJECT (session), signals[AUTHENTICATION_COMPLETE], 0);
     }
 
+    session_update_login1_session_id (session, NULL);
     g_signal_emit (G_OBJECT (session), signals[STOPPED], 0);
 
     /* Delete account if it is a guest one */
@@ -960,7 +1000,8 @@ session_real_run (Session *session)
     for (gsize i = 0; i < argc; i++)
         write_string (session, priv->argv[i]);
 
-    priv->login1_session_id = read_string_from_child (session);
+    g_autofree gchar *login1_session_id = read_string_from_child (session);
+    session_update_login1_session_id (session, login1_session_id);
     priv->console_kit_cookie = read_string_from_child (session);
 }
 
@@ -1132,6 +1173,18 @@ session_class_init (SessionClass *klass)
     klass->run = session_real_run;
     klass->stop = session_real_stop;
     object_class->finalize = session_finalize;
+    object_class->get_property = session_get_property;
+
+    session_properties[PROP_LOGIN1_SESSION_ID] =
+        g_param_spec_string ("login1-session-id",
+                             "Login1 Session ID",
+                             "org.freedesktop.login1 session identifier for this session",
+                             NULL,
+                             G_PARAM_READABLE | G_PARAM_EXPLICIT_NOTIFY);
+    g_object_class_install_property (object_class,
+                                     PROP_LOGIN1_SESSION_ID,
+                                     session_properties[PROP_LOGIN1_SESSION_ID]);
+
 
     signals[CREATE_GREETER] =
         g_signal_new (SESSION_SIGNAL_CREATE_GREETER,

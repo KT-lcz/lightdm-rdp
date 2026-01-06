@@ -20,6 +20,8 @@
 #include "session-config.h"
 #include "common/user-list.h"
 
+#include <unistd.h>
+
 enum {
     SESSION_ADDED,
     RUNNING_USER_SESSION,
@@ -92,6 +94,13 @@ static DisplayServer *create_display_server (Seat *seat, Session *session);
 static gboolean start_display_server (Seat *seat, DisplayServer *display_server);
 static GreeterSession *create_greeter_session (Seat *seat);
 static void start_session (Seat *seat, Session *session);
+
+static gboolean
+seat_should_restart_greeter (Seat *seat)
+{
+    return !seat_get_boolean_property (seat, "skip-greeter-on-logout");
+}
+
 
 static void
 free_seat_module (gpointer data)
@@ -525,10 +534,18 @@ display_server_stopped_cb (DisplayServer *display_server, Seat *seat)
         Session *active_session = seat_get_active_session (seat);
         if (!active_session || session_get_display_server (active_session) == display_server)
         {
-            l_debug (seat, "Active display server stopped, starting greeter");
-            if (!seat_switch_to_greeter (seat))
+            if (seat_should_restart_greeter (seat))
             {
-                l_debug (seat, "Stopping; failed to start a greeter");
+                l_debug (seat, "Active display server stopped, starting greeter");
+                if (!seat_switch_to_greeter (seat))
+                {
+                    l_debug (seat, "Stopping; failed to start a greeter");
+                    seat_stop (seat);
+                }
+            }
+            else
+            {
+                l_debug (seat, "Active display server stopped, skipping greeter restart");
                 seat_stop (seat);
             }
         }
@@ -878,10 +895,18 @@ session_stopped_cb (Session *session, Seat *seat)
     /* If we were the active session, switch to a greeter */
     else if (!IS_GREETER_SESSION (session) && session == seat_get_active_session (seat))
     {
-        l_debug (seat, "Active session stopped, starting greeter");
-        if (!seat_switch_to_greeter (seat))
+        if (seat_should_restart_greeter (seat))
         {
-            l_debug (seat, "Stopping; failed to start a greeter");
+            l_debug (seat, "Active session stopped, starting greeter");
+            if (!seat_switch_to_greeter (seat))
+            {
+                l_debug (seat, "Stopping; failed to start a greeter");
+                seat_stop (seat);
+            }
+        }
+        else
+        {
+            l_debug (seat, "Active session stopped, skipping greeter restart");
             seat_stop (seat);
         }
     }
@@ -1240,7 +1265,14 @@ greeter_start_session_cb (Greeter *greeter, SessionType type, const gchar *sessi
     Session *greeter_session = get_greeter_session (seat, greeter);
     if (greeter_session)
     {
+        l_debug (seat, "found greeter session");
         DisplayServer *display_server = session_get_display_server (greeter_session);
+        if (display_server)
+            l_debug (seat, "found display_server");
+        if (greeter_get_resettable(greeter))
+            l_debug (seat, "greeter resettable");
+        if (can_share_display_server(seat,display_server))
+            l_debug (seat, "can share display server");
         if (display_server &&
             !greeter_get_resettable (greeter) &&
             can_share_display_server (seat, display_server) &&

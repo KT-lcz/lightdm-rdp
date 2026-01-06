@@ -77,6 +77,9 @@ void x_server_local_set_background (XServerLocal *server, const gchar *backgroun
 
 const gchar *x_server_local_get_authority_file_path (XServerLocal *server);
 
+gboolean x_server_local_set_display_number (XServerLocal *server, guint display_number);
+
+
 G_END_DECLS
 
 #endif /* X_SERVER_LOCAL_H_ */
