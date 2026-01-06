@@ -93,11 +93,26 @@ wayland_session_finalize (GObject *object)
 }
 
 static void
+wayland_session_stop (WaylandSession *session)
+{
+    WaylandSessionPrivate *priv = wayland_session_get_instance_private (session);
+
+    if (priv->have_vt_ref)
+    {
+        vt_unref (priv->vt);
+        priv->have_vt_ref = FALSE;
+    }
+
+    DISPLAY_SERVER_CLASS (wayland_session_parent_class)->stop (DISPLAY_SERVER (session));
+}
+
+static void
 wayland_session_class_init (WaylandSessionClass *klass)
 {
     GObjectClass *object_class = G_OBJECT_CLASS (klass);
     DisplayServerClass *display_server_class = DISPLAY_SERVER_CLASS (klass);
 
+    display_server_class->stop = wayland_session_stop;
     display_server_class->get_vt = wayland_session_get_vt;
     display_server_class->connect_session = wayland_session_connect_session;
     display_server_class->disconnect_session = wayland_session_disconnect_session;
