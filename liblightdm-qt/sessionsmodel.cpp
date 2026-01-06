@@ -90,10 +90,6 @@ SessionsModel::SessionsModel(QObject *parent) :
 {
     Q_D(SessionsModel);
 
-    QHash<int, QByteArray> roles = roleNames();
-    roles[KeyRole] = "key";
-    setRoleNames(roles);
-
     d->loadSessions(SessionsModel::LocalSessions);
 }
 
@@ -102,10 +98,6 @@ SessionsModel::SessionsModel(SessionsModel::SessionType sessionType, QObject *pa
     d_ptr(new SessionsModelPrivate(this))
 {
     Q_D(SessionsModel);
-
-    QHash<int, QByteArray> roles = roleNames();
-    roles[KeyRole] = "key";
-    setRoleNames(roles);
 
     d->loadSessions(sessionType);
 }
@@ -150,8 +142,15 @@ QVariant SessionsModel::data(const QModelIndex &index, int role) const
     return QVariant();
 }
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
-#include "sessionsmodel_moc5.cpp"
+QHash<int, QByteArray> SessionsModel::roleNames() const
+{
+    QHash<int, QByteArray> roles = QAbstractListModel::roleNames();
+    roles[KeyRole] = "key";
+    return roles;
+}
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include "sessionsmodel_moc6.cpp"
 #else
-#include "sessionsmodel_moc4.cpp"
+#include "sessionsmodel_moc5.cpp"
 #endif

@@ -44,6 +44,8 @@ namespace QLightDM {
         QVariant data(const QModelIndex &index, int role=Qt::DisplayRole) const;
 
     protected:
+        QHash<int,QByteArray> roleNames() const override;
+
         SessionsModelPrivate *d_ptr;
 
     private:

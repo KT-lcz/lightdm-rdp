@@ -46,6 +46,7 @@ public:
     QVariant data(const QModelIndex &index, int role) const;
 
 protected:
+    QHash<int,QByteArray> roleNames() const override;
 
 private:
     UsersModelPrivate * const d_ptr;

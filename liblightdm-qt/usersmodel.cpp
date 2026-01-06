@@ -185,21 +185,8 @@ UsersModel::UsersModel(QObject *parent) :
     d_ptr(new UsersModelPrivate(this))
 {
     Q_D(UsersModel);
-    // Extend roleNames (we want to keep the "display" role)
-    QHash<int, QByteArray> roles = roleNames();
-    roles[NameRole] = "name";
-    roles[RealNameRole] = "realName";
-    roles[LoggedInRole] = "loggedIn";
-    roles[BackgroundRole] = "background";
-    roles[BackgroundPathRole] = "backgroundPath";
-    roles[SessionRole] = "session";
-    roles[HasMessagesRole] = "hasMessages";
-    roles[ImagePathRole] = "imagePath";
-    roles[UidRole] = "uid";
-    roles[IsLockedRole] = "isLocked";
-    setRoleNames(roles);
-    d->loadUsers();
 
+    d->loadUsers();
 }
 
 UsersModel::~UsersModel()
@@ -257,9 +244,26 @@ QVariant UsersModel::data(const QModelIndex &index, int role) const
     return QVariant();
 }
 
+QHash<int, QByteArray> UsersModel::roleNames() const
+{
+    // Extend roleNames (we want to keep the "display" role)
+    QHash<int, QByteArray> roles = QAbstractListModel::roleNames();
+    roles[NameRole] = "name";
+    roles[RealNameRole] = "realName";
+    roles[LoggedInRole] = "loggedIn";
+    roles[BackgroundRole] = "background";
+    roles[BackgroundPathRole] = "backgroundPath";
+    roles[SessionRole] = "session";
+    roles[HasMessagesRole] = "hasMessages";
+    roles[ImagePathRole] = "imagePath";
+    roles[UidRole] = "uid";
+    roles[IsLockedRole] = "isLocked";
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
-#include "usersmodel_moc5.cpp"
+    return roles;
+}
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include "usersmodel_moc6.cpp"
 #else
-#include "usersmodel_moc4.cpp"
+#include "usersmodel_moc5.cpp"
 #endif
