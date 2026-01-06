@@ -190,20 +190,72 @@ remote_display_session_register_object (RemoteDisplaySession *session, GError **
     return session->registration_id != 0;
 }
 
+static void
+remote_display_append_mode (GString *modelines, GString *modes, guint width, guint height)
+{
+    gdouble h_total = width + 656.0;
+    gdouble v_total = height + 40.0;
+    gdouble clock = (h_total * v_total * 60.0) / 1000000.0;
+
+    guint h1 = width + 128;
+    guint h2 = width + 328;
+    guint h3 = width + 656;
+    guint v1 = height + 3;
+    guint v2 = height + 8;
+    guint v3 = height + 40;
+
+    g_string_append_printf (modelines,
+                            "  Modeline \"%ux%u\"  %.2f  %u %u %u %u %u %u %u %u -hsync +vsync\n",
+                            width,
+                            height,
+                            clock,
+                            width,
+                            h1,
+                            h2,
+                            h3,
+                            height,
+                            v1,
+                            v2,
+                            v3);
+
+    if (modes->len > 0)
+        g_string_append_c (modes, ' ');
+    g_string_append_printf (modes, "\"%ux%u\"", width, height);
+}
+
 static gchar *
 remote_display_session_build_config (RemoteDisplaySession *session)
 {
     (void) g_mkdir_with_parents (REMOTE_DISPLAY_CONFIG_DIR, 0755);
-    gdouble h_total = session->width + 656.0;
-    gdouble v_total = session->height + 40.0;
-    gdouble clock = (h_total * v_total * 60.0) / 1000000.0;
+    static const struct
+    {
+        guint width;
+        guint height;
+    } default_resolutions[] =
+    {
+        { 3840, 2160 },
+        { 2560, 1440 },
+        { 1920, 1080 },
+        { 1600, 900 },
+        { 1280, 720 }
+    };
+    GString *modelines = g_string_new ("");
+    GString *modes = g_string_new ("");
+    gsize i = 0;
 
-    guint h1 = session->width + 128;
-    guint h2 = session->width + 328;
-    guint h3 = session->width + 656;
-    guint v1 = session->height + 3;
-    guint v2 = session->height + 8;
-    guint v3 = session->height + 40;
+    remote_display_append_mode (modelines, modes, session->width, session->height);
+    for (i = 0; i < G_N_ELEMENTS (default_resolutions); i++)
+    {
+        guint width = default_resolutions[i].width;
+        guint height = default_resolutions[i].height;
+
+        if (width > session->width || height > session->height)
+            continue;
+        if (width == session->width && height == session->height)
+            continue;
+
+        remote_display_append_mode (modelines, modes, width, height);
+    }
 
     g_autofree gchar *contents = g_strdup_printf (
         "Section \"Device\"\n"
@@ -215,7 +267,7 @@ remote_display_session_build_config (RemoteDisplaySession *session)
         "  Identifier \"dummy_monitor\"\n"
         "  HorizSync 30-80\n"
         "  VertRefresh 60\n"
-        "  Modeline \"%ux%u\"  %.2f  %u %u %u %u %u %u %u %u -hsync +vsync\n"
+        "%s"
         "EndSection\n\n"
         "Section \"Screen\"\n"
         "  Identifier \"dummy_screen\"\n"
@@ -224,22 +276,14 @@ remote_display_session_build_config (RemoteDisplaySession *session)
         "  DefaultDepth 24\n"
         "  SubSection \"Display\"\n"
         "    Depth 24\n"
-        "    Modes \"%ux%u\"\n"
+        "    Modes %s\n"
         "  EndSubSection\n"
         "EndSection\n",
-        session->width,
-        session->height,
-        clock,
-        session->width,
-        h1,
-        h2,
-        h3,
-        session->height,
-        v1,
-        v2,
-        v3,
-        session->width,
-        session->height);
+        modelines->str,
+        modes->str);
+
+    g_string_free (modelines, TRUE);
+    g_string_free (modes, TRUE);
 
     g_autofree gchar *path = g_strdup_printf ("%s/session-%u.conf", REMOTE_DISPLAY_CONFIG_DIR, session->remote_id);
     if (!g_file_set_contents (path, contents, -1, NULL))
@@ -567,8 +611,8 @@ remote_display_session_create (guint32 remote_id,
         return NULL;
     }
 
-    // session->config_path = remote_display_session_build_config (session); // TODO
-    session->config_path = g_strdup("/etc/X11/lcz/10-dummy.conf");
+    session->config_path = remote_display_session_build_config (session); // TODO
+    // session->config_path = g_strdup("/etc/X11/lcz/10-dummy.conf");
     if (!session->config_path)
     {
         g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "Failed to prepare Xorg configuration");
