@@ -12,6 +12,7 @@
 
 #include "remote-display-factory.h"
 
+#include "configuration.h"
 #include "seat-config.h"
 #include "seat.h"
 #include "greeter-session.h"
@@ -20,7 +21,6 @@
 #define REMOTE_DISPLAY_FACTORY_OBJECT_PATH "/org/deepin/DisplayManager/RemoteDisplayFactory"
 #define REMOTE_DISPLAY_SESSION_OBJECT_PREFIX "/org/deepin/DisplayManager/RemoteDisplayFactory/Sessions"
 #define REMOTE_DISPLAY_X_COMMAND "/usr/bin/Xorg"
-#define REMOTE_DISPLAY_DEFAULT_DISPLAY_NUMBER 99
 #define REMOTE_DISPLAY_CONFIG_DIR RUN_DIR "/remote-displays"
 #define REMOTE_DISPLAY_FACTORY_INTERFACE_NAME "org.deepin.DisplayManager.RemoteDisplayFactory"
 #define REMOTE_DISPLAY_SESSION_INTERFACE_NAME "org.deepin.DisplayManager.RemoteDisplayFactory.Session"
@@ -58,7 +58,7 @@ static guint remote_display_factory_reg_id = 0;
 static GHashTable *remote_display_sessions = NULL;
 static GHashTable *remote_display_numbers_in_use = NULL;
 static guint remote_display_session_index = 0;
-static guint remote_display_next_display_number = REMOTE_DISPLAY_DEFAULT_DISPLAY_NUMBER;
+static guint remote_display_next_display_number = 0;
 static GDBusNodeInfo *remote_display_dbus_info = NULL;
 
 static const gchar remote_display_dbus_xml[] =
@@ -104,6 +104,12 @@ static gpointer
 remote_display_session_key (guint32 remote_id)
 {
     return GUINT_TO_POINTER ((guint) remote_id);
+}
+
+static guint
+remote_display_default_display_number (void)
+{
+    return (guint) config_get_integer (config_get_instance (), "LightDM", "minimum-remote-display-number");
 }
 
 static GDBusInterfaceInfo *
@@ -168,7 +174,7 @@ remote_display_release_display_number (guint number)
     {
         g_hash_table_unref (remote_display_numbers_in_use);
         remote_display_numbers_in_use = NULL;
-        remote_display_next_display_number = REMOTE_DISPLAY_DEFAULT_DISPLAY_NUMBER;
+        remote_display_next_display_number = remote_display_default_display_number ();
     }
 }
 
@@ -810,6 +816,8 @@ remote_display_factory_init (DisplayManager *manager)
     if (remote_display_factory_bus_id != 0)
         return;
 
+    remote_display_next_display_number = remote_display_default_display_number ();
+
     GBusType bus_type = getuid () == 0 ? G_BUS_TYPE_SYSTEM : G_BUS_TYPE_SESSION;
     remote_display_factory_bus_id = g_bus_own_name (bus_type,
                                                     REMOTE_DISPLAY_FACTORY_BUS_NAME,
@@ -859,5 +867,5 @@ remote_display_factory_stop (void)
     }
 
     remote_display_session_index = 0;
-    remote_display_next_display_number = REMOTE_DISPLAY_DEFAULT_DISPLAY_NUMBER;
+    remote_display_next_display_number = remote_display_default_display_number ();
 }
