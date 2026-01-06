@@ -18,7 +18,7 @@
 #include "guest-account.h"
 #include "greeter-session.h"
 #include "session-config.h"
-#include "common/user-list.h"
+#include "user-list.h"
 
 #include <unistd.h>
 

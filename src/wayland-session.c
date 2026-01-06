@@ -93,17 +93,17 @@ wayland_session_finalize (GObject *object)
 }
 
 static void
-wayland_session_stop (WaylandSession *session)
+wayland_session_stop (DisplayServer *server)
 {
-    WaylandSessionPrivate *priv = wayland_session_get_instance_private (session);
+    WaylandSessionPrivate *priv = wayland_session_get_instance_private (WAYLAND_SESSION (server));
 
-    if (priv->have_vt_ref)
+    if (priv && priv->have_vt_ref)
     {
         vt_unref (priv->vt);
         priv->have_vt_ref = FALSE;
     }
 
-    DISPLAY_SERVER_CLASS (wayland_session_parent_class)->stop (DISPLAY_SERVER (session));
+    DISPLAY_SERVER_CLASS (wayland_session_parent_class)->stop (server);
 }
 
 static void
