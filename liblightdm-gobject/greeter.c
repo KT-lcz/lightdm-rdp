@@ -1474,8 +1474,8 @@ lightdm_greeter_respond (LightDMGreeter *greeter, const gchar *response, GError 
 
     guint8 message[MAX_MESSAGE_LENGTH];
     gsize offset = 0;
-    if (priv->n_responses_waiting == 0)
-    {
+    // if (priv->n_responses_waiting == 0)
+    // {
         g_debug ("Providing response to display manager");
 
         guint32 msg_length = int_length ();
@@ -1495,7 +1495,7 @@ lightdm_greeter_respond (LightDMGreeter *greeter, const gchar *response, GError 
 
         g_list_free_full (priv->responses_received, g_free);
         priv->responses_received = NULL;
-    }
+    // }
 
     return TRUE;
 }
