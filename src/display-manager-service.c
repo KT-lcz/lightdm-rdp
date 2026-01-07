@@ -104,9 +104,15 @@ session_bus_entry_new (DisplayManagerService *service, Session *session, const g
 static void
 emit_object_value_changed (GDBusConnection *bus, const gchar *path, const gchar *interface_name, const gchar *property_name, GVariant *property_value)
 {
-    GVariantBuilder builder;
-    g_variant_builder_init (&builder, G_VARIANT_TYPE_ARRAY);
-    g_variant_builder_add (&builder, "{sv}", property_name, property_value);
+    return;
+    GVariantBuilder changed_builder;
+    g_variant_builder_init (&changed_builder, G_VARIANT_TYPE ("a{sv}"));
+    g_variant_builder_add (&changed_builder, "{sv}", property_name, property_value);
+    g_autoptr(GVariant) changed = g_variant_builder_end (&changed_builder);
+
+    GVariantBuilder invalidated_builder;
+    g_variant_builder_init (&invalidated_builder, G_VARIANT_TYPE ("as"));
+    g_autoptr(GVariant) invalidated = g_variant_builder_end (&invalidated_builder);
 
     g_autoptr(GError) error = NULL;
     if (!g_dbus_connection_emit_signal (bus,
@@ -114,7 +120,10 @@ emit_object_value_changed (GDBusConnection *bus, const gchar *path, const gchar 
                                         path,
                                         "org.freedesktop.DBus.Properties",
                                         "PropertiesChanged",
-                                        g_variant_new ("(sa{sv}as)", interface_name, &builder, NULL),
+                                        g_variant_new ("(sa{sv}as)",
+                                                       interface_name,
+                                                       g_steal_pointer (&changed),
+                                                       g_steal_pointer (&invalidated)),
                                         &error))
         g_warning ("Failed to emit PropertiesChanged signal: %s", error->message);
 }
