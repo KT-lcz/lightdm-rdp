@@ -21,7 +21,7 @@
 #define REMOTE_DISPLAY_FACTORY_OBJECT_PATH "/org/deepin/DisplayManager/RemoteDisplayFactory"
 #define REMOTE_DISPLAY_SESSION_OBJECT_PREFIX "/org/deepin/DisplayManager/RemoteDisplayFactory/Sessions"
 #define REMOTE_DISPLAY_X_COMMAND "/usr/bin/Xorg"
-#define REMOTE_DISPLAY_CONFIG_DIR RUN_DIR "/remote-displays"
+#define REMOTE_DISPLAY_CONFIG_DIR "/var/lib/lightdm/remote-displays"
 #define REMOTE_DISPLAY_FACTORY_INTERFACE_NAME "org.deepin.DisplayManager.RemoteDisplayFactory"
 #define REMOTE_DISPLAY_SESSION_INTERFACE_NAME "org.deepin.DisplayManager.RemoteDisplayFactory.Session"
 
