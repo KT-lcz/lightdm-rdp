@@ -702,7 +702,7 @@ drd_dbus_lightdm_remote_display_factory_session_proxy_set_property_cb (GDBusProx
   if (!_ret)
     {
       g_warning ("Error setting property '%s' on interface org.deepin.DisplayManager.RemoteDisplayFactory.Session: %s (%s, %d)",
-                 info->parent_struct.name, 
+                 info->parent_struct.name,
                  error->message, g_quark_to_string (error->domain), error->code);
       g_error_free (error);
     }
@@ -1254,11 +1254,7 @@ drd_dbus_lightdm_remote_display_factory_session_skeleton_dbus_interface_get_prop
 
   GVariantBuilder builder;
   guint n;
-#if GLIB_VERSION_MAX_ALLOWED >= GLIB_VERSION_2_84
-  g_variant_builder_init_static (&builder, G_VARIANT_TYPE ("a{sv}"));
-#else
-  g_variant_builder_init(&builder, G_VARIANT_TYPE ("a{sv}"));
-#endif
+  g_variant_builder_init (&builder, G_VARIANT_TYPE ("a{sv}"));
   if (_drd_dbus_lightdm_remote_display_factory_session_interface_info.parent_struct.properties == NULL)
     goto out;
   for (n = 0; _drd_dbus_lightdm_remote_display_factory_session_interface_info.parent_struct.properties[n] != NULL; n++)
@@ -1351,13 +1347,8 @@ _drd_dbus_lightdm_remote_display_factory_session_emit_changed (gpointer user_dat
   guint num_changes;
 
   g_mutex_lock (&skeleton->priv->lock);
-#if GLIB_VERSION_MAX_ALLOWED >= GLIB_VERSION_2_84
-  g_variant_builder_init_static (&builder, G_VARIANT_TYPE ("a{sv}"));
-  g_variant_builder_init_static (&invalidated_builder, G_VARIANT_TYPE ("as"));
-#else
   g_variant_builder_init (&builder, G_VARIANT_TYPE ("a{sv}"));
   g_variant_builder_init (&invalidated_builder, G_VARIANT_TYPE ("as"));
-#endif
   for (l = skeleton->priv->changed_properties, num_changes = 0; l != NULL; l = l->next)
     {
       ChangedProperty *cp = l->data;
@@ -2740,11 +2731,7 @@ drd_dbus_lightdm_remote_display_factory_skeleton_dbus_interface_get_properties (
 
   GVariantBuilder builder;
   guint n;
-#if GLIB_VERSION_MAX_ALLOWED >= GLIB_VERSION_2_84
-  g_variant_builder_init_static (&builder, G_VARIANT_TYPE ("a{sv}"));
-#else
-  g_variant_builder_init(&builder, G_VARIANT_TYPE ("a{sv}"));
-#endif
+  g_variant_builder_init (&builder, G_VARIANT_TYPE ("a{sv}"));
   if (_drd_dbus_lightdm_remote_display_factory_interface_info.parent_struct.properties == NULL)
     goto out;
   for (n = 0; _drd_dbus_lightdm_remote_display_factory_interface_info.parent_struct.properties[n] != NULL; n++)
