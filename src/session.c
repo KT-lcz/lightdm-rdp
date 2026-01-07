@@ -495,8 +495,6 @@ session_get_property (GObject *object, guint prop_id, GValue *value, GParamSpec 
 static void
 session_update_login1_session_id (Session *session, const gchar *value)
 {
-    if (value == NULL)
-        return;
     SessionPrivate *priv = session_get_instance_private (session);
 
     if (g_strcmp0 (priv->login1_session_id, value) == 0)
