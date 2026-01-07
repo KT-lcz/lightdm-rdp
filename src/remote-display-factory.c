@@ -16,14 +16,13 @@
 #include "seat-config.h"
 #include "seat.h"
 #include "greeter-session.h"
+#include "drd-dbus-lightdm.h"
 
 #define REMOTE_DISPLAY_FACTORY_BUS_NAME "org.deepin.DisplayManager"
 #define REMOTE_DISPLAY_FACTORY_OBJECT_PATH "/org/deepin/DisplayManager/RemoteDisplayFactory"
 #define REMOTE_DISPLAY_SESSION_OBJECT_PREFIX "/org/deepin/DisplayManager/RemoteDisplayFactory/Sessions"
 #define REMOTE_DISPLAY_X_COMMAND "/usr/bin/Xorg"
 #define REMOTE_DISPLAY_CONFIG_DIR "/var/lib/lightdm/remote-displays"
-#define REMOTE_DISPLAY_FACTORY_INTERFACE_NAME "org.deepin.DisplayManager.RemoteDisplayFactory"
-#define REMOTE_DISPLAY_SESSION_INTERFACE_NAME "org.deepin.DisplayManager.RemoteDisplayFactory.Session"
 
 typedef enum
 {
@@ -33,13 +32,13 @@ typedef enum
 
 typedef struct
 {
-    guint8 remote_id;
+    guint32 remote_id;
     guint32 width;
     guint32 height;
     gchar *user_name;
     gchar *address;
     gchar *object_path;
-    guint registration_id;
+    DrdDBusLightdmRemoteDisplayFactorySession *dbus_session;
     RemoteDisplaySessionMode mode;
 
     Seat *seat;
@@ -54,42 +53,11 @@ typedef struct
 static DisplayManager *remote_display_manager = NULL;
 static guint remote_display_factory_bus_id = 0;
 static GDBusConnection *remote_display_connection = NULL;
-static guint remote_display_factory_reg_id = 0;
+static DrdDBusLightdmRemoteDisplayFactory *remote_display_factory_skeleton = NULL;
 static GHashTable *remote_display_sessions = NULL;
 static GHashTable *remote_display_numbers_in_use = NULL;
 static guint remote_display_session_index = 0;
 static guint remote_display_next_display_number = 0;
-static GDBusNodeInfo *remote_display_dbus_info = NULL;
-
-static const gchar remote_display_dbus_xml[] =
-"<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\" \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">"
-"<node>"
-"  <interface name=\"org.deepin.DisplayManager.RemoteDisplayFactory\">"
-"    <method name=\"CreateRemoteGreeterDisplay\">"
-"      <arg name=\"remote_id\" direction=\"in\" type=\"u\"/>"
-"      <arg name=\"width\" direction=\"in\" type=\"u\"/>"
-"      <arg name=\"height\" direction=\"in\" type=\"u\"/>"
-"      <arg name=\"address\" direction=\"in\" type=\"s\"/>"
-"      <arg name=\"session\" direction=\"out\" type=\"o\"/>"
-"    </method>"
-"    <method name=\"CreateSingleLogonSession\">"
-"      <arg name=\"remote_id\" direction=\"in\" type=\"y\"/>"
-"      <arg name=\"width\" direction=\"in\" type=\"u\"/>"
-"      <arg name=\"height\" direction=\"in\" type=\"u\"/>"
-"      <arg name=\"user_name\" direction=\"in\" type=\"s\"/>"
-"      <arg name=\"address\" direction=\"in\" type=\"s\"/>"
-"      <arg name=\"session\" direction=\"out\" type=\"o\"/>"
-"    </method>"
-"  </interface>"
-"  <interface name=\"org.deepin.DisplayManager.RemoteDisplayFactory.Session\">"
-"    <property name=\"UserName\" type=\"s\" access=\"read\"/>"
-"    <property name=\"Address\" type=\"s\" access=\"read\"/>"
-"    <property name=\"SessionId\" type=\"s\" access=\"read\"/>"
-"  </interface>"
-"</node>";
-
-static const GDBusInterfaceVTable remote_display_factory_vtable;
-static const GDBusInterfaceVTable remote_display_session_vtable;
 
 static RemoteDisplaySession *remote_display_session_create (guint32 remote_id,
                                                             guint32 width,
@@ -110,39 +78,6 @@ static guint
 remote_display_default_display_number (void)
 {
     return (guint) config_get_integer (config_get_instance (), "LightDM", "minimum-remote-display-number");
-}
-
-static GDBusInterfaceInfo *
-remote_display_lookup_interface (const gchar *interface_name)
-{
-    if (!remote_display_dbus_info)
-    {
-        g_autoptr(GError) parse_error = NULL;
-        remote_display_dbus_info = g_dbus_node_info_new_for_xml (remote_display_dbus_xml, &parse_error);
-        if (!remote_display_dbus_info)
-        {
-            const gchar *message = parse_error ? parse_error->message : "unknown error";
-            g_error ("Failed to parse remote display D-Bus XML: %s", message);
-        }
-    }
-
-    GDBusInterfaceInfo *info = g_dbus_node_info_lookup_interface (remote_display_dbus_info, interface_name);
-    if (!info)
-        g_error ("Missing interface %s in remote display D-Bus XML", interface_name);
-
-    return info;
-}
-
-static GDBusInterfaceInfo *
-remote_display_session_interface_info (void)
-{
-    return remote_display_lookup_interface (REMOTE_DISPLAY_SESSION_INTERFACE_NAME);
-}
-
-static GDBusInterfaceInfo *
-remote_display_factory_interface_info (void)
-{
-    return remote_display_lookup_interface (REMOTE_DISPLAY_FACTORY_INTERFACE_NAME);
 }
 
 static guint
@@ -186,14 +121,24 @@ remote_display_session_register_object (RemoteDisplaySession *session, GError **
 
     g_autofree gchar *path = g_strdup_printf ("%s/%u", REMOTE_DISPLAY_SESSION_OBJECT_PREFIX, ++remote_display_session_index);
     session->object_path = g_steal_pointer (&path);
-    session->registration_id = g_dbus_connection_register_object (remote_display_connection,
-                                                                  session->object_path,
-                                                                  remote_display_session_interface_info (),
-                                                                  &remote_display_session_vtable,
-                                                                  session,
-                                                                  NULL,
-                                                                  error);
-    return session->registration_id != 0;
+    g_autoptr(DrdDBusLightdmRemoteDisplayFactorySession) session_skeleton =
+        drd_dbus_lightdm_remote_display_factory_session_skeleton_new ();
+
+    drd_dbus_lightdm_remote_display_factory_session_set_user_name (session_skeleton,
+                                                                   session->user_name ? session->user_name : "");
+    drd_dbus_lightdm_remote_display_factory_session_set_address (session_skeleton,
+                                                                 session->address ? session->address : "");
+    drd_dbus_lightdm_remote_display_factory_session_set_session_id (session_skeleton,
+                                                                    session->session_id ? session->session_id : "");
+
+    if (!g_dbus_interface_skeleton_export (G_DBUS_INTERFACE_SKELETON (session_skeleton),
+                                           remote_display_connection,
+                                           session->object_path,
+                                           error))
+        return FALSE;
+
+    session->dbus_session = g_steal_pointer (&session_skeleton);
+    return TRUE;
 }
 
 static void
@@ -322,38 +267,6 @@ remote_display_session_cleanup_config (RemoteDisplaySession *session)
 }
 
 static void
-remote_display_session_emit_session_id_changed (RemoteDisplaySession *session)
-{
-    g_return_if_fail (session != NULL);
-
-    if (!remote_display_connection || !session->object_path)
-        return;
-
-    GVariantBuilder changed_builder;
-    g_variant_builder_init (&changed_builder, G_VARIANT_TYPE ("a{sv}"));
-    g_variant_builder_add (&changed_builder,
-                           "{sv}",
-                           "SessionId",
-                           g_variant_new_string (session->session_id ? session->session_id : ""));
-    g_autoptr(GVariant) changed = g_variant_builder_end (&changed_builder);
-
-    GVariantBuilder invalidated_builder;
-    g_variant_builder_init (&invalidated_builder, G_VARIANT_TYPE ("as"));
-    g_autoptr(GVariant) invalidated = g_variant_builder_end (&invalidated_builder);
-
-    g_dbus_connection_emit_signal (remote_display_connection,
-                                   NULL,
-                                   session->object_path,
-                                   "org.freedesktop.DBus.Properties",
-                                   "PropertiesChanged",
-                                   g_variant_new ("(sa{sv}as)",
-                                                  REMOTE_DISPLAY_SESSION_INTERFACE_NAME,
-                                                  g_steal_pointer (&changed),
-                                                  g_steal_pointer (&invalidated)),
-                                   NULL);
-}
-
-static void
 remote_display_session_set_session_id (RemoteDisplaySession *session, const gchar *new_id)
 {
     g_return_if_fail (session != NULL);
@@ -364,7 +277,8 @@ remote_display_session_set_session_id (RemoteDisplaySession *session, const gcha
 
     g_free (session->session_id);
     session->session_id = g_strdup (value);
-    remote_display_session_emit_session_id_changed (session);
+    if (session->dbus_session)
+        drd_dbus_lightdm_remote_display_factory_session_set_session_id (session->dbus_session, value);
 }
 
 static const gchar *
@@ -480,8 +394,11 @@ remote_display_session_free (RemoteDisplaySession *session)
     if (!session)
         return;
 
-    if (session->registration_id && remote_display_connection)
-        g_dbus_connection_unregister_object (remote_display_connection, session->registration_id);
+    if (session->dbus_session)
+    {
+        g_dbus_interface_skeleton_unexport (G_DBUS_INTERFACE_SKELETON (session->dbus_session));
+        g_clear_object (&session->dbus_session);
+    }
 
     if (session->seat)
     {
@@ -644,132 +561,74 @@ remote_display_session_create (guint32 remote_id,
     return session;
 }
 
-static GVariant *
-remote_display_session_get_property (G_GNUC_UNUSED GDBusConnection *connection,
-                                     G_GNUC_UNUSED const gchar *sender,
-                                     G_GNUC_UNUSED const gchar *object_path,
-                                     G_GNUC_UNUSED const gchar *interface_name,
-                                     const gchar *property_name,
-                                     GError **error,
-                                     gpointer user_data)
+static gboolean
+remote_display_factory_handle_create_remote_greeter_display (DrdDBusLightdmRemoteDisplayFactory *object,
+                                                             GDBusMethodInvocation *invocation,
+                                                             guint arg_remote_id,
+                                                             guint arg_width,
+                                                             guint arg_height,
+                                                             const gchar *arg_address,
+                                                             gpointer user_data)
 {
-    RemoteDisplaySession *session = user_data;
+    (void) user_data;
 
-    if (g_strcmp0 (property_name, "UserName") == 0)
-        return g_variant_new_string (session->user_name ? session->user_name : "");
-    if (g_strcmp0 (property_name, "Address") == 0)
-        return g_variant_new_string (session->address ? session->address : "");
-    if (g_strcmp0 (property_name, "SessionId") == 0)
-        return g_variant_new_string (session->session_id ? session->session_id : "");
-
-    g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_PROPERTY,
-                 "Unknown property %s", property_name);
-    return NULL;
-}
-
-static const GDBusInterfaceVTable remote_display_session_vtable =
-{
-    NULL,
-    remote_display_session_get_property,
-    NULL
-};
-
-static void
-remote_display_factory_call (G_GNUC_UNUSED GDBusConnection *connection,
-                             G_GNUC_UNUSED const gchar *sender,
-                             G_GNUC_UNUSED const gchar *object_path,
-                             G_GNUC_UNUSED const gchar *interface_name,
-                             const gchar *method_name,
-                             GVariant *parameters,
-                             GDBusMethodInvocation *invocation,
-                             G_GNUC_UNUSED gpointer user_data)
-{
-    if (g_strcmp0 (method_name, "CreateRemoteGreeterDisplay") == 0)
+    g_autoptr(GError) error = NULL;
+    RemoteDisplaySession *session = remote_display_session_create (arg_remote_id,
+                                                                   arg_width,
+                                                                   arg_height,
+                                                                   NULL,
+                                                                   arg_address,
+                                                                   REMOTE_DISPLAY_SESSION_MODE_GREETER,
+                                                                   &error);
+    if (!session)
     {
-        guint8 remote_id = 0;
-        guint32 width = 0;
-        guint32 height = 0;
-        const gchar *address = NULL;
-        g_variant_get (parameters, "(uuu&s)", &remote_id, &width, &height, &address);
-
-        g_autoptr(GError) error = NULL;
-        RemoteDisplaySession *session = remote_display_session_create (remote_id,
-                                                                       width,
-                                                                       height,
-                                                                       NULL,
-                                                                       address,
-                                                                       REMOTE_DISPLAY_SESSION_MODE_GREETER,
-                                                                       &error);
-        if (!session)
-        {
-            if (error && error->domain == G_DBUS_ERROR && error->code == G_DBUS_ERROR_INVALID_ARGS)
-                g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "%s", error->message);
-            else
-                g_dbus_method_invocation_return_gerror (invocation, error);
-            return;
-        }
-
-        g_dbus_method_invocation_return_value (invocation, g_variant_new ("(o)", session->object_path));
-        return;
+        if (error && error->domain == G_DBUS_ERROR && error->code == G_DBUS_ERROR_INVALID_ARGS)
+            g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "%s", error->message);
+        else
+            g_dbus_method_invocation_return_gerror (invocation, error);
+        return TRUE;
     }
 
-    if (g_strcmp0 (method_name, "CreateSingleLogonSession") == 0)
+    drd_dbus_lightdm_remote_display_factory_complete_create_remote_greeter_display (object,
+                                                                                    invocation,
+                                                                                    session->object_path);
+    return TRUE;
+}
+
+static gboolean
+remote_display_factory_handle_create_single_logon_session (DrdDBusLightdmRemoteDisplayFactory *object,
+                                                           GDBusMethodInvocation *invocation,
+                                                           guchar arg_remote_id,
+                                                           guint arg_width,
+                                                           guint arg_height,
+                                                           const gchar *arg_user_name,
+                                                           const gchar *arg_address,
+                                                           gpointer user_data)
+{
+    (void) user_data;
+
+    g_autoptr(GError) error = NULL;
+    RemoteDisplaySession *session = remote_display_session_create (arg_remote_id,
+                                                                   arg_width,
+                                                                   arg_height,
+                                                                   arg_user_name,
+                                                                   arg_address,
+                                                                   REMOTE_DISPLAY_SESSION_MODE_SINGLE_LOGON,
+                                                                   &error);
+    if (!session)
     {
-        guint8 remote_id = 0;
-        guint32 width = 0;
-        guint32 height = 0;
-        const gchar *user_name = NULL;
-        const gchar *address = NULL;
-        g_variant_get (parameters, "(yuu&s&s)", &remote_id, &width, &height, &user_name, &address);
-
-        g_autoptr(GError) error = NULL;
-        RemoteDisplaySession *session = remote_display_session_create (remote_id,
-                                                                       width,
-                                                                       height,
-                                                                       user_name,
-                                                                       address,
-                                                                       REMOTE_DISPLAY_SESSION_MODE_SINGLE_LOGON,
-                                                                       &error);
-        if (!session)
-        {
-            if (error && error->domain == G_DBUS_ERROR && error->code == G_DBUS_ERROR_INVALID_ARGS)
-                g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "%s", error->message);
-            else
-                g_dbus_method_invocation_return_gerror (invocation, error);
-            return;
-        }
-
-        g_dbus_method_invocation_return_value (invocation, g_variant_new ("(o)", session->object_path));
-        return;
+        if (error && error->domain == G_DBUS_ERROR && error->code == G_DBUS_ERROR_INVALID_ARGS)
+            g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "%s", error->message);
+        else
+            g_dbus_method_invocation_return_gerror (invocation, error);
+        return TRUE;
     }
 
-    g_dbus_method_invocation_return_error (invocation,
-                                           G_DBUS_ERROR,
-                                           G_DBUS_ERROR_UNKNOWN_METHOD,
-                                           "Unknown method %s",
-                                           method_name);
+    drd_dbus_lightdm_remote_display_factory_complete_create_single_logon_session (object,
+                                                                                  invocation,
+                                                                                  session->object_path);
+    return TRUE;
 }
-
-static GVariant *
-remote_display_factory_get_property (G_GNUC_UNUSED GDBusConnection *connection,
-                                     G_GNUC_UNUSED const gchar *sender,
-                                     G_GNUC_UNUSED const gchar *object_path,
-                                     G_GNUC_UNUSED const gchar *interface_name,
-                                     const gchar *property_name,
-                                     GError **error,
-                                     G_GNUC_UNUSED gpointer user_data)
-{
-    g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_PROPERTY,
-                 "Unknown property %s", property_name);
-    return NULL;
-}
-
-static const GDBusInterfaceVTable remote_display_factory_vtable =
-{
-    remote_display_factory_call,
-    remote_display_factory_get_property,
-    NULL
-};
 
 static void
 remote_display_factory_name_acquired_cb (GDBusConnection *connection,
@@ -778,19 +637,29 @@ remote_display_factory_name_acquired_cb (GDBusConnection *connection,
 {
     remote_display_connection = g_object_ref (connection);
 
+    g_autoptr(DrdDBusLightdmRemoteDisplayFactory) factory_skeleton =
+        drd_dbus_lightdm_remote_display_factory_skeleton_new ();
+    g_signal_connect (factory_skeleton,
+                      "handle-create-remote-greeter-display",
+                      G_CALLBACK (remote_display_factory_handle_create_remote_greeter_display),
+                      NULL);
+    g_signal_connect (factory_skeleton,
+                      "handle-create-single-logon-session",
+                      G_CALLBACK (remote_display_factory_handle_create_single_logon_session),
+                      NULL);
+
     g_autoptr(GError) error = NULL;
-    remote_display_factory_reg_id = g_dbus_connection_register_object (connection,
-                                                                       REMOTE_DISPLAY_FACTORY_OBJECT_PATH,
-                                                                       remote_display_factory_interface_info (),
-                                                                       &remote_display_factory_vtable,
-                                                                       NULL,
-                                                                       NULL,
-                                                                       &error);
-    if (remote_display_factory_reg_id == 0)
+    if (!g_dbus_interface_skeleton_export (G_DBUS_INTERFACE_SKELETON (factory_skeleton),
+                                           connection,
+                                           REMOTE_DISPLAY_FACTORY_OBJECT_PATH,
+                                           &error))
     {
         const gchar *message = error ? error->message : "unknown error";
         g_critical ("Failed to export remote display factory: %s", message);
+        return;
     }
+
+    remote_display_factory_skeleton = g_steal_pointer (&factory_skeleton);
 }
 
 static void
@@ -798,10 +667,12 @@ remote_display_factory_name_lost_cb (GDBusConnection *connection,
                                      G_GNUC_UNUSED const gchar *name,
                                      G_GNUC_UNUSED gpointer user_data)
 {
-    if (remote_display_factory_reg_id != 0 && connection)
-        g_dbus_connection_unregister_object (connection, remote_display_factory_reg_id);
-
-    remote_display_factory_reg_id = 0;
+    (void) connection;
+    if (remote_display_factory_skeleton)
+    {
+        g_dbus_interface_skeleton_unexport (G_DBUS_INTERFACE_SKELETON (remote_display_factory_skeleton));
+        g_clear_object (&remote_display_factory_skeleton);
+    }
 
     if (remote_display_connection)
         g_clear_object (&remote_display_connection);
@@ -838,9 +709,11 @@ remote_display_factory_stop (void)
         remote_display_factory_bus_id = 0;
     }
 
-    if (remote_display_factory_reg_id != 0 && remote_display_connection)
-        g_dbus_connection_unregister_object (remote_display_connection, remote_display_factory_reg_id);
-    remote_display_factory_reg_id = 0;
+    if (remote_display_factory_skeleton)
+    {
+        g_dbus_interface_skeleton_unexport (G_DBUS_INTERFACE_SKELETON (remote_display_factory_skeleton));
+        g_clear_object (&remote_display_factory_skeleton);
+    }
 
     if (remote_display_sessions)
     {
@@ -859,12 +732,6 @@ remote_display_factory_stop (void)
 
     g_clear_object (&remote_display_connection);
     g_clear_object (&remote_display_manager);
-
-    if (remote_display_dbus_info)
-    {
-        g_dbus_node_info_unref (remote_display_dbus_info);
-        remote_display_dbus_info = NULL;
-    }
 
     remote_display_session_index = 0;
     remote_display_next_display_number = remote_display_default_display_number ();
