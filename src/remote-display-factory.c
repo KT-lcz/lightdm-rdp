@@ -47,7 +47,7 @@ typedef struct
     gulong seat_stopped_handler;
     gulong seat_session_added_handler;
     gulong seat_session_removed_handler;
-    gchar *session_id;
+    guint session_id;
 } RemoteDisplaySession;
 
 static DisplayManager *remote_display_manager = NULL;
@@ -129,9 +129,9 @@ remote_display_session_register_object (RemoteDisplaySession *session, GError **
     drd_dbus_lightdm_remote_display_factory_session_set_address (session_skeleton,
                                                                  session->address ? session->address : "");
     drd_dbus_lightdm_remote_display_factory_session_set_session_id (session_skeleton,
-                                                                    session->session_id ? session->session_id : "");
-    g_autofree gchar *client_id = g_strdup_printf ("%u", session->remote_id);
-    drd_dbus_lightdm_remote_display_factory_session_set_client_id (session_skeleton, client_id);
+                                                                    session->session_id);
+    drd_dbus_lightdm_remote_display_factory_session_set_client_id (session_skeleton,
+                                                                   session->remote_id);
 
     if (!g_dbus_interface_skeleton_export (G_DBUS_INTERFACE_SKELETON (session_skeleton),
                                            remote_display_connection,
@@ -268,19 +268,31 @@ remote_display_session_cleanup_config (RemoteDisplaySession *session)
     }
 }
 
+static guint
+remote_display_session_parse_login1_id (const gchar *login1_id)
+{
+    if (!login1_id || login1_id[0] == '\0')
+        return 0;
+
+    gchar *end = NULL;
+    guint64 value = g_ascii_strtoull (login1_id, &end, 10);
+    if (!end || *end != '\0' || value > G_MAXUINT32)
+        return 0;
+
+    return (guint) value;
+}
+
 static void
-remote_display_session_set_session_id (RemoteDisplaySession *session, const gchar *new_id)
+remote_display_session_set_session_id (RemoteDisplaySession *session, guint new_id)
 {
     g_return_if_fail (session != NULL);
 
-    const gchar *value = (new_id && new_id[0]) ? new_id : "";
-    if (g_strcmp0 (session->session_id, value) == 0)
+    if (session->session_id == new_id)
         return;
 
-    g_free (session->session_id);
-    session->session_id = g_strdup (value);
+    session->session_id = new_id;
     if (session->dbus_session)
-        drd_dbus_lightdm_remote_display_factory_session_set_session_id (session->dbus_session, value);
+        drd_dbus_lightdm_remote_display_factory_session_set_session_id (session->dbus_session, new_id);
 }
 
 static const gchar *
@@ -319,7 +331,7 @@ remote_display_session_refresh_session_id (RemoteDisplaySession *session)
 {
     g_return_if_fail (session != NULL);
     const gchar *login1_id = remote_display_session_select_login1_id (session);
-    remote_display_session_set_session_id (session, login1_id);
+    remote_display_session_set_session_id (session, remote_display_session_parse_login1_id (login1_id));
 }
 
 static void
@@ -421,7 +433,6 @@ remote_display_session_free (RemoteDisplaySession *session)
 
     g_clear_pointer (&session->user_name, g_free);
     g_clear_pointer (&session->address, g_free);
-    g_clear_pointer (&session->session_id, g_free);
     g_clear_pointer (&session->object_path, g_free);
     g_free (session);
 }
@@ -525,7 +536,7 @@ remote_display_session_create (guint32 remote_id,
     session->address = g_strdup (address);
     session->mode = mode;
     session->display_number = remote_display_allocate_display_number ();
-    session->session_id = g_strdup ("");
+    session->session_id = 0;
 
     g_autoptr(GError) register_error = NULL;
     if (!remote_display_session_register_object (session, &register_error))
@@ -600,7 +611,7 @@ remote_display_factory_handle_create_remote_greeter_display (DrdDBusLightdmRemot
 static gboolean
 remote_display_factory_handle_create_single_logon_session (DrdDBusLightdmRemoteDisplayFactory *object,
                                                            GDBusMethodInvocation *invocation,
-                                                           guchar arg_remote_id,
+                                                           guint arg_remote_id,
                                                            guint arg_width,
                                                            guint arg_height,
                                                            const gchar *arg_user_name,

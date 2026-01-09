@@ -249,7 +249,7 @@ _g_dbus_codegen_marshal_BOOLEAN__OBJECT_UINT_UINT_UINT_STRING (
 }
 
 static void
-_g_dbus_codegen_marshal_BOOLEAN__OBJECT_UCHAR_UINT_UINT_STRING_STRING (
+_g_dbus_codegen_marshal_BOOLEAN__OBJECT_UINT_UINT_UINT_STRING_STRING (
     GClosure     *closure,
     GValue       *return_value,
     unsigned int  n_param_values,
@@ -257,16 +257,16 @@ _g_dbus_codegen_marshal_BOOLEAN__OBJECT_UCHAR_UINT_UINT_STRING_STRING (
     void         *invocation_hint G_GNUC_UNUSED,
     void         *marshal_data)
 {
-  typedef gboolean (*_GDbusCodegenMarshalBoolean_ObjectUcharUintUintStringStringFunc)
+  typedef gboolean (*_GDbusCodegenMarshalBoolean_ObjectUintUintUintStringStringFunc)
        (void *data1,
         GDBusMethodInvocation *arg_method_invocation,
-        guchar arg_client_id,
+        guint arg_client_id,
         guint arg_width,
         guint arg_height,
         const gchar *arg_user_name,
         const gchar *arg_address,
         void *data2);
-  _GDbusCodegenMarshalBoolean_ObjectUcharUintUintStringStringFunc callback;
+  _GDbusCodegenMarshalBoolean_ObjectUintUintUintStringStringFunc callback;
   GCClosure *cc = (GCClosure*) closure;
   void *data1, *data2;
   gboolean v_return;
@@ -285,13 +285,13 @@ _g_dbus_codegen_marshal_BOOLEAN__OBJECT_UCHAR_UINT_UINT_STRING_STRING (
       data2 = closure->data;
     }
 
-  callback = (_GDbusCodegenMarshalBoolean_ObjectUcharUintUintStringStringFunc)
+  callback = (_GDbusCodegenMarshalBoolean_ObjectUintUintUintStringStringFunc)
     (marshal_data ? marshal_data : cc->callback);
 
   v_return =
     callback (data1,
               g_marshal_value_peek_object (param_values + 1),
-              g_marshal_value_peek_uchar (param_values + 2),
+              g_marshal_value_peek_uint (param_values + 2),
               g_marshal_value_peek_uint (param_values + 3),
               g_marshal_value_peek_uint (param_values + 4),
               g_marshal_value_peek_string (param_values + 5),
@@ -349,7 +349,7 @@ static const _ExtendedGDBusPropertyInfo _drd_dbus_lightdm_remote_display_factory
   {
     -1,
     (gchar *) "session_id",
-    (gchar *) "s",
+    (gchar *) "u",
     G_DBUS_PROPERTY_INFO_FLAGS_READABLE,
     NULL
   },
@@ -363,7 +363,7 @@ static const _ExtendedGDBusPropertyInfo _drd_dbus_lightdm_remote_display_factory
   {
     -1,
     (gchar *) "client_id",
-    (gchar *) "s",
+    (gchar *) "u",
     G_DBUS_PROPERTY_INFO_FLAGS_READABLE,
     NULL
   },
@@ -480,7 +480,7 @@ drd_dbus_lightdm_remote_display_factory_session_default_init (DrdDBusLightdmRemo
    * Since the D-Bus property for this #GObject property is readable but not writable, it is meaningful to read from it on both the client- and service-side. It is only meaningful, however, to write to it on the service-side.
    */
   g_object_interface_install_property (iface,
-    g_param_spec_string ("session-id", "session_id", "session_id", NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+    g_param_spec_uint ("session-id", "session_id", "session_id", 0, G_MAXUINT32, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   /**
    * DrdDBusLightdmRemoteDisplayFactorySession:client-id:
    *
@@ -489,7 +489,7 @@ drd_dbus_lightdm_remote_display_factory_session_default_init (DrdDBusLightdmRemo
    * Since the D-Bus property for this #GObject property is readable but not writable, it is meaningful to read from it on both the client- and service-side. It is only meaningful, however, to write to it on the service-side.
    */
   g_object_interface_install_property (iface,
-    g_param_spec_string ("client-id", "client_id", "client_id", NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+    g_param_spec_uint ("client-id", "client_id", "client_id", 0, G_MAXUINT32, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 /**
@@ -606,34 +606,14 @@ drd_dbus_lightdm_remote_display_factory_session_set_address (DrdDBusLightdmRemot
  *
  * Since this D-Bus property is readable, it is meaningful to use this function on both the client- and service-side.
  *
- * The returned value is only valid until the property changes so on the client-side it is only safe to use this function on the thread where @object was constructed. Use drd_dbus_lightdm_remote_display_factory_session_dup_session_id() if on another thread.
- *
- * Returns: (transfer none) (nullable): The property value or %NULL if the property is not set. Do not free the returned value, it belongs to @object.
+ * Returns: The property value.
  */
-const gchar *
+guint 
 drd_dbus_lightdm_remote_display_factory_session_get_session_id (DrdDBusLightdmRemoteDisplayFactorySession *object)
 {
-  g_return_val_if_fail (DRD_DBUS_LIGHTDM_IS_REMOTE_DISPLAY_FACTORY_SESSION (object), NULL);
+  g_return_val_if_fail (DRD_DBUS_LIGHTDM_IS_REMOTE_DISPLAY_FACTORY_SESSION (object), 0);
 
   return DRD_DBUS_LIGHTDM_REMOTE_DISPLAY_FACTORY_SESSION_GET_IFACE (object)->get_session_id (object);
-}
-
-/**
- * drd_dbus_lightdm_remote_display_factory_session_dup_session_id: (skip)
- * @object: A #DrdDBusLightdmRemoteDisplayFactorySession.
- *
- * Gets a copy of the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.session_id">"session_id"</link> D-Bus property.
- *
- * Since this D-Bus property is readable, it is meaningful to use this function on both the client- and service-side.
- *
- * Returns: (transfer full) (nullable): The property value or %NULL if the property is not set. The returned value should be freed with g_free().
- */
-gchar *
-drd_dbus_lightdm_remote_display_factory_session_dup_session_id (DrdDBusLightdmRemoteDisplayFactorySession *object)
-{
-  gchar *value;
-  g_object_get (G_OBJECT (object), "session-id", &value, NULL);
-  return value;
 }
 
 /**
@@ -646,7 +626,7 @@ drd_dbus_lightdm_remote_display_factory_session_dup_session_id (DrdDBusLightdmRe
  * Since this D-Bus property is not writable, it is only meaningful to use this function on the service-side.
  */
 void
-drd_dbus_lightdm_remote_display_factory_session_set_session_id (DrdDBusLightdmRemoteDisplayFactorySession *object, const gchar *value)
+drd_dbus_lightdm_remote_display_factory_session_set_session_id (DrdDBusLightdmRemoteDisplayFactorySession *object, guint value)
 {
   g_object_set (G_OBJECT (object), "session-id", value, NULL);
 }
@@ -659,34 +639,14 @@ drd_dbus_lightdm_remote_display_factory_session_set_session_id (DrdDBusLightdmRe
  *
  * Since this D-Bus property is readable, it is meaningful to use this function on both the client- and service-side.
  *
- * The returned value is only valid until the property changes so on the client-side it is only safe to use this function on the thread where @object was constructed. Use drd_dbus_lightdm_remote_display_factory_session_dup_client_id() if on another thread.
- *
- * Returns: (transfer none) (nullable): The property value or %NULL if the property is not set. Do not free the returned value, it belongs to @object.
+ * Returns: The property value.
  */
-const gchar *
+guint 
 drd_dbus_lightdm_remote_display_factory_session_get_client_id (DrdDBusLightdmRemoteDisplayFactorySession *object)
 {
-  g_return_val_if_fail (DRD_DBUS_LIGHTDM_IS_REMOTE_DISPLAY_FACTORY_SESSION (object), NULL);
+  g_return_val_if_fail (DRD_DBUS_LIGHTDM_IS_REMOTE_DISPLAY_FACTORY_SESSION (object), 0);
 
   return DRD_DBUS_LIGHTDM_REMOTE_DISPLAY_FACTORY_SESSION_GET_IFACE (object)->get_client_id (object);
-}
-
-/**
- * drd_dbus_lightdm_remote_display_factory_session_dup_client_id: (skip)
- * @object: A #DrdDBusLightdmRemoteDisplayFactorySession.
- *
- * Gets a copy of the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.client_id">"client_id"</link> D-Bus property.
- *
- * Since this D-Bus property is readable, it is meaningful to use this function on both the client- and service-side.
- *
- * Returns: (transfer full) (nullable): The property value or %NULL if the property is not set. The returned value should be freed with g_free().
- */
-gchar *
-drd_dbus_lightdm_remote_display_factory_session_dup_client_id (DrdDBusLightdmRemoteDisplayFactorySession *object)
-{
-  gchar *value;
-  g_object_get (G_OBJECT (object), "client-id", &value, NULL);
-  return value;
 }
 
 /**
@@ -699,7 +659,7 @@ drd_dbus_lightdm_remote_display_factory_session_dup_client_id (DrdDBusLightdmRem
  * Since this D-Bus property is not writable, it is only meaningful to use this function on the service-side.
  */
 void
-drd_dbus_lightdm_remote_display_factory_session_set_client_id (DrdDBusLightdmRemoteDisplayFactorySession *object, const gchar *value)
+drd_dbus_lightdm_remote_display_factory_session_set_client_id (DrdDBusLightdmRemoteDisplayFactorySession *object, guint value)
 {
   g_object_set (G_OBJECT (object), "client-id", value, NULL);
 }
@@ -911,31 +871,31 @@ drd_dbus_lightdm_remote_display_factory_session_proxy_get_address (DrdDBusLightd
   return value;
 }
 
-static const gchar *
+static guint 
 drd_dbus_lightdm_remote_display_factory_session_proxy_get_session_id (DrdDBusLightdmRemoteDisplayFactorySession *object)
 {
   DrdDBusLightdmRemoteDisplayFactorySessionProxy *proxy = DRD_DBUS_LIGHTDM_REMOTE_DISPLAY_FACTORY_SESSION_PROXY (object);
   GVariant *variant;
-  const gchar *value = NULL;
+  guint value = 0;
   variant = g_dbus_proxy_get_cached_property (G_DBUS_PROXY (proxy), "session_id");
   if (variant != NULL)
     {
-      value = g_variant_get_string (variant, NULL);
+      value = g_variant_get_uint32 (variant);
       g_variant_unref (variant);
     }
   return value;
 }
 
-static const gchar *
+static guint 
 drd_dbus_lightdm_remote_display_factory_session_proxy_get_client_id (DrdDBusLightdmRemoteDisplayFactorySession *object)
 {
   DrdDBusLightdmRemoteDisplayFactorySessionProxy *proxy = DRD_DBUS_LIGHTDM_REMOTE_DISPLAY_FACTORY_SESSION_PROXY (object);
   GVariant *variant;
-  const gchar *value = NULL;
+  guint value = 0;
   variant = g_dbus_proxy_get_cached_property (G_DBUS_PROXY (proxy), "client_id");
   if (variant != NULL)
     {
-      value = g_variant_get_string (variant, NULL);
+      value = g_variant_get_uint32 (variant);
       g_variant_unref (variant);
     }
   return value;
@@ -1584,8 +1544,8 @@ drd_dbus_lightdm_remote_display_factory_session_skeleton_init (DrdDBusLightdmRem
   skeleton->priv->properties = g_new0 (GValue, 4);
   g_value_init (&skeleton->priv->properties[0], G_TYPE_STRING);
   g_value_init (&skeleton->priv->properties[1], G_TYPE_STRING);
-  g_value_init (&skeleton->priv->properties[2], G_TYPE_STRING);
-  g_value_init (&skeleton->priv->properties[3], G_TYPE_STRING);
+  g_value_init (&skeleton->priv->properties[2], G_TYPE_UINT);
+  g_value_init (&skeleton->priv->properties[3], G_TYPE_UINT);
 }
 
 static const gchar *
@@ -1610,24 +1570,24 @@ drd_dbus_lightdm_remote_display_factory_session_skeleton_get_address (DrdDBusLig
   return value;
 }
 
-static const gchar *
+static guint 
 drd_dbus_lightdm_remote_display_factory_session_skeleton_get_session_id (DrdDBusLightdmRemoteDisplayFactorySession *object)
 {
   DrdDBusLightdmRemoteDisplayFactorySessionSkeleton *skeleton = DRD_DBUS_LIGHTDM_REMOTE_DISPLAY_FACTORY_SESSION_SKELETON (object);
-  const gchar *value;
+  guint value;
   g_mutex_lock (&skeleton->priv->lock);
-  value = g_marshal_value_peek_string (&(skeleton->priv->properties[2]));
+  value = g_marshal_value_peek_uint (&(skeleton->priv->properties[2]));
   g_mutex_unlock (&skeleton->priv->lock);
   return value;
 }
 
-static const gchar *
+static guint 
 drd_dbus_lightdm_remote_display_factory_session_skeleton_get_client_id (DrdDBusLightdmRemoteDisplayFactorySession *object)
 {
   DrdDBusLightdmRemoteDisplayFactorySessionSkeleton *skeleton = DRD_DBUS_LIGHTDM_REMOTE_DISPLAY_FACTORY_SESSION_SKELETON (object);
-  const gchar *value;
+  guint value;
   g_mutex_lock (&skeleton->priv->lock);
-  value = g_marshal_value_peek_string (&(skeleton->priv->properties[3]));
+  value = g_marshal_value_peek_uint (&(skeleton->priv->properties[3]));
   g_mutex_unlock (&skeleton->priv->lock);
   return value;
 }
@@ -1748,11 +1708,11 @@ static const GDBusArgInfo * const _drd_dbus_lightdm_remote_display_factory_metho
   NULL
 };
 
-static const _ExtendedGDBusArgInfo _drd_dbus_lightdm_remote_display_factory_method_info_create_remote_greeter_display_OUT_ARG_session =
+static const _ExtendedGDBusArgInfo _drd_dbus_lightdm_remote_display_factory_method_info_create_remote_greeter_display_OUT_ARG_session_path =
 {
   {
     -1,
-    (gchar *) "session",
+    (gchar *) "session_path",
     (gchar *) "o",
     NULL
   },
@@ -1761,7 +1721,7 @@ static const _ExtendedGDBusArgInfo _drd_dbus_lightdm_remote_display_factory_meth
 
 static const GDBusArgInfo * const _drd_dbus_lightdm_remote_display_factory_method_info_create_remote_greeter_display_OUT_ARG_pointers[] =
 {
-  &_drd_dbus_lightdm_remote_display_factory_method_info_create_remote_greeter_display_OUT_ARG_session.parent_struct,
+  &_drd_dbus_lightdm_remote_display_factory_method_info_create_remote_greeter_display_OUT_ARG_session_path.parent_struct,
   NULL
 };
 
@@ -1783,7 +1743,7 @@ static const _ExtendedGDBusArgInfo _drd_dbus_lightdm_remote_display_factory_meth
   {
     -1,
     (gchar *) "client_id",
-    (gchar *) "y",
+    (gchar *) "u",
     NULL
   },
   FALSE
@@ -1843,11 +1803,11 @@ static const GDBusArgInfo * const _drd_dbus_lightdm_remote_display_factory_metho
   NULL
 };
 
-static const _ExtendedGDBusArgInfo _drd_dbus_lightdm_remote_display_factory_method_info_create_single_logon_session_OUT_ARG_session =
+static const _ExtendedGDBusArgInfo _drd_dbus_lightdm_remote_display_factory_method_info_create_single_logon_session_OUT_ARG_session_path =
 {
   {
     -1,
-    (gchar *) "session",
+    (gchar *) "session_path",
     (gchar *) "o",
     NULL
   },
@@ -1856,7 +1816,7 @@ static const _ExtendedGDBusArgInfo _drd_dbus_lightdm_remote_display_factory_meth
 
 static const GDBusArgInfo * const _drd_dbus_lightdm_remote_display_factory_method_info_create_single_logon_session_OUT_ARG_pointers[] =
 {
-  &_drd_dbus_lightdm_remote_display_factory_method_info_create_single_logon_session_OUT_ARG_session.parent_struct,
+  &_drd_dbus_lightdm_remote_display_factory_method_info_create_single_logon_session_OUT_ARG_session_path.parent_struct,
   NULL
 };
 
@@ -1946,7 +1906,7 @@ drd_dbus_lightdm_remote_display_factory_method_marshal_create_single_logon_sessi
     void         *invocation_hint,
     void         *marshal_data)
 {
-  _g_dbus_codegen_marshal_BOOLEAN__OBJECT_UCHAR_UINT_UINT_STRING_STRING (closure,
+  _g_dbus_codegen_marshal_BOOLEAN__OBJECT_UINT_UINT_UINT_STRING_STRING (closure,
     return_value, n_param_values, param_values, invocation_hint, marshal_data);
 }
 
@@ -2024,7 +1984,7 @@ drd_dbus_lightdm_remote_display_factory_default_init (DrdDBusLightdmRemoteDispla
       drd_dbus_lightdm_remote_display_factory_method_marshal_create_single_logon_session,
     G_TYPE_BOOLEAN,
     6,
-    G_TYPE_DBUS_METHOD_INVOCATION, G_TYPE_UCHAR, G_TYPE_UINT, G_TYPE_UINT, G_TYPE_STRING, G_TYPE_STRING);
+    G_TYPE_DBUS_METHOD_INVOCATION, G_TYPE_UINT, G_TYPE_UINT, G_TYPE_UINT, G_TYPE_STRING, G_TYPE_STRING);
 
 }
 
@@ -2073,7 +2033,7 @@ drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_display (
 /**
  * drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_display_finish:
  * @proxy: A #DrdDBusLightdmRemoteDisplayFactoryProxy.
- * @out_session: (out) (optional): Return location for return parameter or %NULL to ignore.
+ * @out_session_path: (out) (optional): Return location for return parameter or %NULL to ignore.
  * @res: The #GAsyncResult obtained from the #GAsyncReadyCallback passed to drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_display().
  * @error: Return location for error or %NULL.
  *
@@ -2084,7 +2044,7 @@ drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_display (
 gboolean
 drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_display_finish (
     DrdDBusLightdmRemoteDisplayFactory *proxy,
-    gchar **out_session,
+    gchar **out_session_path,
     GAsyncResult *res,
     GError **error)
 {
@@ -2094,7 +2054,7 @@ drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_display_finis
     goto _out;
   g_variant_get (_ret,
                  "(o)",
-                 out_session);
+                 out_session_path);
   g_variant_unref (_ret);
 _out:
   return _ret != NULL;
@@ -2107,7 +2067,7 @@ _out:
  * @arg_width: Argument to pass with the method invocation.
  * @arg_height: Argument to pass with the method invocation.
  * @arg_address: Argument to pass with the method invocation.
- * @out_session: (out) (optional): Return location for return parameter or %NULL to ignore.
+ * @out_session_path: (out) (optional): Return location for return parameter or %NULL to ignore.
  * @cancellable: (nullable): A #GCancellable or %NULL.
  * @error: Return location for error or %NULL.
  *
@@ -2124,7 +2084,7 @@ drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_display_sync 
     guint arg_width,
     guint arg_height,
     const gchar *arg_address,
-    gchar **out_session,
+    gchar **out_session_path,
     GCancellable *cancellable,
     GError **error)
 {
@@ -2144,7 +2104,7 @@ drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_display_sync 
     goto _out;
   g_variant_get (_ret,
                  "(o)",
-                 out_session);
+                 out_session_path);
   g_variant_unref (_ret);
 _out:
   return _ret != NULL;
@@ -2171,7 +2131,7 @@ _out:
 void
 drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session (
     DrdDBusLightdmRemoteDisplayFactory *proxy,
-    guchar arg_client_id,
+    guint arg_client_id,
     guint arg_width,
     guint arg_height,
     const gchar *arg_user_name,
@@ -2182,7 +2142,7 @@ drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session (
 {
   g_dbus_proxy_call (G_DBUS_PROXY (proxy),
     "CreateSingleLogonSession",
-    g_variant_new ("(yuuss)",
+    g_variant_new ("(uuuss)",
                    arg_client_id,
                    arg_width,
                    arg_height,
@@ -2198,7 +2158,7 @@ drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session (
 /**
  * drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session_finish:
  * @proxy: A #DrdDBusLightdmRemoteDisplayFactoryProxy.
- * @out_session: (out) (optional): Return location for return parameter or %NULL to ignore.
+ * @out_session_path: (out) (optional): Return location for return parameter or %NULL to ignore.
  * @res: The #GAsyncResult obtained from the #GAsyncReadyCallback passed to drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session().
  * @error: Return location for error or %NULL.
  *
@@ -2209,7 +2169,7 @@ drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session (
 gboolean
 drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session_finish (
     DrdDBusLightdmRemoteDisplayFactory *proxy,
-    gchar **out_session,
+    gchar **out_session_path,
     GAsyncResult *res,
     GError **error)
 {
@@ -2219,7 +2179,7 @@ drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session_finish 
     goto _out;
   g_variant_get (_ret,
                  "(o)",
-                 out_session);
+                 out_session_path);
   g_variant_unref (_ret);
 _out:
   return _ret != NULL;
@@ -2233,7 +2193,7 @@ _out:
  * @arg_height: Argument to pass with the method invocation.
  * @arg_user_name: Argument to pass with the method invocation.
  * @arg_address: Argument to pass with the method invocation.
- * @out_session: (out) (optional): Return location for return parameter or %NULL to ignore.
+ * @out_session_path: (out) (optional): Return location for return parameter or %NULL to ignore.
  * @cancellable: (nullable): A #GCancellable or %NULL.
  * @error: Return location for error or %NULL.
  *
@@ -2246,19 +2206,19 @@ _out:
 gboolean
 drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session_sync (
     DrdDBusLightdmRemoteDisplayFactory *proxy,
-    guchar arg_client_id,
+    guint arg_client_id,
     guint arg_width,
     guint arg_height,
     const gchar *arg_user_name,
     const gchar *arg_address,
-    gchar **out_session,
+    gchar **out_session_path,
     GCancellable *cancellable,
     GError **error)
 {
   GVariant *_ret;
   _ret = g_dbus_proxy_call_sync (G_DBUS_PROXY (proxy),
     "CreateSingleLogonSession",
-    g_variant_new ("(yuuss)",
+    g_variant_new ("(uuuss)",
                    arg_client_id,
                    arg_width,
                    arg_height,
@@ -2272,7 +2232,7 @@ drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session_sync (
     goto _out;
   g_variant_get (_ret,
                  "(o)",
-                 out_session);
+                 out_session_path);
   g_variant_unref (_ret);
 _out:
   return _ret != NULL;
@@ -2282,7 +2242,7 @@ _out:
  * drd_dbus_lightdm_remote_display_factory_complete_create_remote_greeter_display:
  * @object: A #DrdDBusLightdmRemoteDisplayFactory.
  * @invocation: (transfer full): A #GDBusMethodInvocation.
- * @session: Parameter to return.
+ * @session_path: Parameter to return.
  *
  * Helper function used in service implementations to finish handling invocations of the <link linkend="gdbus-method-org-deepin-DisplayManager-RemoteDisplayFactory.CreateRemoteGreeterDisplay">CreateRemoteGreeterDisplay()</link> D-Bus method. If you instead want to finish handling an invocation by returning an error, use g_dbus_method_invocation_return_error() or similar.
  *
@@ -2292,18 +2252,18 @@ void
 drd_dbus_lightdm_remote_display_factory_complete_create_remote_greeter_display (
     DrdDBusLightdmRemoteDisplayFactory *object G_GNUC_UNUSED,
     GDBusMethodInvocation *invocation,
-    const gchar *session)
+    const gchar *session_path)
 {
   g_dbus_method_invocation_return_value (invocation,
     g_variant_new ("(o)",
-                   session));
+                   session_path));
 }
 
 /**
  * drd_dbus_lightdm_remote_display_factory_complete_create_single_logon_session:
  * @object: A #DrdDBusLightdmRemoteDisplayFactory.
  * @invocation: (transfer full): A #GDBusMethodInvocation.
- * @session: Parameter to return.
+ * @session_path: Parameter to return.
  *
  * Helper function used in service implementations to finish handling invocations of the <link linkend="gdbus-method-org-deepin-DisplayManager-RemoteDisplayFactory.CreateSingleLogonSession">CreateSingleLogonSession()</link> D-Bus method. If you instead want to finish handling an invocation by returning an error, use g_dbus_method_invocation_return_error() or similar.
  *
@@ -2313,11 +2273,11 @@ void
 drd_dbus_lightdm_remote_display_factory_complete_create_single_logon_session (
     DrdDBusLightdmRemoteDisplayFactory *object G_GNUC_UNUSED,
     GDBusMethodInvocation *invocation,
-    const gchar *session)
+    const gchar *session_path)
 {
   g_dbus_method_invocation_return_value (invocation,
     g_variant_new ("(o)",
-                   session));
+                   session_path));
 }
 
 /* ------------------------------------------------------------------------ */
