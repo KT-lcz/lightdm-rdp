@@ -130,6 +130,8 @@ remote_display_session_register_object (RemoteDisplaySession *session, GError **
                                                                  session->address ? session->address : "");
     drd_dbus_lightdm_remote_display_factory_session_set_session_id (session_skeleton,
                                                                     session->session_id ? session->session_id : "");
+    g_autofree gchar *client_id = g_strdup_printf ("%u", session->remote_id);
+    drd_dbus_lightdm_remote_display_factory_session_set_client_id (session_skeleton, client_id);
 
     if (!g_dbus_interface_skeleton_export (G_DBUS_INTERFACE_SKELETON (session_skeleton),
                                            remote_display_connection,
@@ -261,7 +263,7 @@ remote_display_session_cleanup_config (RemoteDisplaySession *session)
 {
     if (session->config_path)
     {
-        // g_remove (session->config_path);
+        g_remove (session->config_path);
         g_clear_pointer (&session->config_path, g_free);
     }
 }

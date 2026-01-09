@@ -32,6 +32,8 @@ struct _DrdDBusLightdmRemoteDisplayFactorySessionIface
 
   const gchar * (*get_address) (DrdDBusLightdmRemoteDisplayFactorySession *object);
 
+  const gchar * (*get_client_id) (DrdDBusLightdmRemoteDisplayFactorySession *object);
+
   const gchar * (*get_session_id) (DrdDBusLightdmRemoteDisplayFactorySession *object);
 
   const gchar * (*get_user_name) (DrdDBusLightdmRemoteDisplayFactorySession *object);
@@ -60,6 +62,10 @@ void drd_dbus_lightdm_remote_display_factory_session_set_address (DrdDBusLightdm
 const gchar *drd_dbus_lightdm_remote_display_factory_session_get_session_id (DrdDBusLightdmRemoteDisplayFactorySession *object);
 gchar *drd_dbus_lightdm_remote_display_factory_session_dup_session_id (DrdDBusLightdmRemoteDisplayFactorySession *object);
 void drd_dbus_lightdm_remote_display_factory_session_set_session_id (DrdDBusLightdmRemoteDisplayFactorySession *object, const gchar *value);
+
+const gchar *drd_dbus_lightdm_remote_display_factory_session_get_client_id (DrdDBusLightdmRemoteDisplayFactorySession *object);
+gchar *drd_dbus_lightdm_remote_display_factory_session_dup_client_id (DrdDBusLightdmRemoteDisplayFactorySession *object);
+void drd_dbus_lightdm_remote_display_factory_session_set_client_id (DrdDBusLightdmRemoteDisplayFactorySession *object, const gchar *value);
 
 
 /* ---- */
@@ -185,7 +191,7 @@ struct _DrdDBusLightdmRemoteDisplayFactoryIface
   gboolean (*handle_create_remote_greeter_display) (
     DrdDBusLightdmRemoteDisplayFactory *object,
     GDBusMethodInvocation *invocation,
-    guint arg_remote_id,
+    guint arg_client_id,
     guint arg_width,
     guint arg_height,
     const gchar *arg_address);
@@ -193,7 +199,7 @@ struct _DrdDBusLightdmRemoteDisplayFactoryIface
   gboolean (*handle_create_single_logon_session) (
     DrdDBusLightdmRemoteDisplayFactory *object,
     GDBusMethodInvocation *invocation,
-    guchar arg_remote_id,
+    guchar arg_client_id,
     guint arg_width,
     guint arg_height,
     const gchar *arg_user_name,
@@ -227,7 +233,7 @@ void drd_dbus_lightdm_remote_display_factory_complete_create_single_logon_sessio
 /* D-Bus method calls: */
 void drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_display (
     DrdDBusLightdmRemoteDisplayFactory *proxy,
-    guint arg_remote_id,
+    guint arg_client_id,
     guint arg_width,
     guint arg_height,
     const gchar *arg_address,
@@ -243,7 +249,7 @@ gboolean drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_disp
 
 gboolean drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_display_sync (
     DrdDBusLightdmRemoteDisplayFactory *proxy,
-    guint arg_remote_id,
+    guint arg_client_id,
     guint arg_width,
     guint arg_height,
     const gchar *arg_address,
@@ -253,7 +259,7 @@ gboolean drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_disp
 
 void drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session (
     DrdDBusLightdmRemoteDisplayFactory *proxy,
-    guchar arg_remote_id,
+    guchar arg_client_id,
     guint arg_width,
     guint arg_height,
     const gchar *arg_user_name,
@@ -270,7 +276,7 @@ gboolean drd_dbus_lightdm_remote_display_factory_call_create_single_logon_sessio
 
 gboolean drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session_sync (
     DrdDBusLightdmRemoteDisplayFactory *proxy,
-    guchar arg_remote_id,
+    guchar arg_client_id,
     guint arg_width,
     guint arg_height,
     const gchar *arg_user_name,

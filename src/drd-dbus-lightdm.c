@@ -209,7 +209,7 @@ _g_dbus_codegen_marshal_BOOLEAN__OBJECT_UINT_UINT_UINT_STRING (
   typedef gboolean (*_GDbusCodegenMarshalBoolean_ObjectUintUintUintStringFunc)
        (void *data1,
         GDBusMethodInvocation *arg_method_invocation,
-        guint arg_remote_id,
+        guint arg_client_id,
         guint arg_width,
         guint arg_height,
         const gchar *arg_address,
@@ -260,7 +260,7 @@ _g_dbus_codegen_marshal_BOOLEAN__OBJECT_UCHAR_UINT_UINT_STRING_STRING (
   typedef gboolean (*_GDbusCodegenMarshalBoolean_ObjectUcharUintUintStringStringFunc)
        (void *data1,
         GDBusMethodInvocation *arg_method_invocation,
-        guchar arg_remote_id,
+        guchar arg_client_id,
         guint arg_width,
         guint arg_height,
         const gchar *arg_user_name,
@@ -320,7 +320,7 @@ static const _ExtendedGDBusPropertyInfo _drd_dbus_lightdm_remote_display_factory
 {
   {
     -1,
-    (gchar *) "UserName",
+    (gchar *) "user_name",
     (gchar *) "s",
     G_DBUS_PROPERTY_INFO_FLAGS_READABLE,
     NULL
@@ -334,7 +334,7 @@ static const _ExtendedGDBusPropertyInfo _drd_dbus_lightdm_remote_display_factory
 {
   {
     -1,
-    (gchar *) "Address",
+    (gchar *) "address",
     (gchar *) "s",
     G_DBUS_PROPERTY_INFO_FLAGS_READABLE,
     NULL
@@ -348,7 +348,7 @@ static const _ExtendedGDBusPropertyInfo _drd_dbus_lightdm_remote_display_factory
 {
   {
     -1,
-    (gchar *) "SessionId",
+    (gchar *) "session_id",
     (gchar *) "s",
     G_DBUS_PROPERTY_INFO_FLAGS_READABLE,
     NULL
@@ -358,11 +358,26 @@ static const _ExtendedGDBusPropertyInfo _drd_dbus_lightdm_remote_display_factory
   TRUE
 };
 
+static const _ExtendedGDBusPropertyInfo _drd_dbus_lightdm_remote_display_factory_session_property_info_client_id =
+{
+  {
+    -1,
+    (gchar *) "client_id",
+    (gchar *) "s",
+    G_DBUS_PROPERTY_INFO_FLAGS_READABLE,
+    NULL
+  },
+  "client-id",
+  FALSE,
+  TRUE
+};
+
 static const GDBusPropertyInfo * const _drd_dbus_lightdm_remote_display_factory_session_property_info_pointers[] =
 {
   &_drd_dbus_lightdm_remote_display_factory_session_property_info_user_name.parent_struct,
   &_drd_dbus_lightdm_remote_display_factory_session_property_info_address.parent_struct,
   &_drd_dbus_lightdm_remote_display_factory_session_property_info_session_id.parent_struct,
+  &_drd_dbus_lightdm_remote_display_factory_session_property_info_client_id.parent_struct,
   NULL
 };
 
@@ -409,6 +424,7 @@ drd_dbus_lightdm_remote_display_factory_session_override_properties (GObjectClas
   g_object_class_override_property (klass, property_id_begin++, "user-name");
   g_object_class_override_property (klass, property_id_begin++, "address");
   g_object_class_override_property (klass, property_id_begin++, "session-id");
+  g_object_class_override_property (klass, property_id_begin++, "client-id");
   return property_id_begin - 1;
 }
 
@@ -424,6 +440,7 @@ drd_dbus_lightdm_remote_display_factory_session_override_properties (GObjectClas
  * DrdDBusLightdmRemoteDisplayFactorySessionIface:
  * @parent_iface: The parent interface.
  * @get_address: Getter for the #DrdDBusLightdmRemoteDisplayFactorySession:address property.
+ * @get_client_id: Getter for the #DrdDBusLightdmRemoteDisplayFactorySession:client-id property.
  * @get_session_id: Getter for the #DrdDBusLightdmRemoteDisplayFactorySession:session-id property.
  * @get_user_name: Getter for the #DrdDBusLightdmRemoteDisplayFactorySession:user-name property.
  *
@@ -440,37 +457,46 @@ drd_dbus_lightdm_remote_display_factory_session_default_init (DrdDBusLightdmRemo
   /**
    * DrdDBusLightdmRemoteDisplayFactorySession:user-name:
    *
-   * Represents the D-Bus property <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.UserName">"UserName"</link>.
+   * Represents the D-Bus property <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.user_name">"user_name"</link>.
    *
    * Since the D-Bus property for this #GObject property is readable but not writable, it is meaningful to read from it on both the client- and service-side. It is only meaningful, however, to write to it on the service-side.
    */
   g_object_interface_install_property (iface,
-    g_param_spec_string ("user-name", "UserName", "UserName", NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+    g_param_spec_string ("user-name", "user_name", "user_name", NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   /**
    * DrdDBusLightdmRemoteDisplayFactorySession:address:
    *
-   * Represents the D-Bus property <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.Address">"Address"</link>.
+   * Represents the D-Bus property <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.address">"address"</link>.
    *
    * Since the D-Bus property for this #GObject property is readable but not writable, it is meaningful to read from it on both the client- and service-side. It is only meaningful, however, to write to it on the service-side.
    */
   g_object_interface_install_property (iface,
-    g_param_spec_string ("address", "Address", "Address", NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+    g_param_spec_string ("address", "address", "address", NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   /**
    * DrdDBusLightdmRemoteDisplayFactorySession:session-id:
    *
-   * Represents the D-Bus property <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.SessionId">"SessionId"</link>.
+   * Represents the D-Bus property <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.session_id">"session_id"</link>.
    *
    * Since the D-Bus property for this #GObject property is readable but not writable, it is meaningful to read from it on both the client- and service-side. It is only meaningful, however, to write to it on the service-side.
    */
   g_object_interface_install_property (iface,
-    g_param_spec_string ("session-id", "SessionId", "SessionId", NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+    g_param_spec_string ("session-id", "session_id", "session_id", NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  /**
+   * DrdDBusLightdmRemoteDisplayFactorySession:client-id:
+   *
+   * Represents the D-Bus property <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.client_id">"client_id"</link>.
+   *
+   * Since the D-Bus property for this #GObject property is readable but not writable, it is meaningful to read from it on both the client- and service-side. It is only meaningful, however, to write to it on the service-side.
+   */
+  g_object_interface_install_property (iface,
+    g_param_spec_string ("client-id", "client_id", "client_id", NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 /**
  * drd_dbus_lightdm_remote_display_factory_session_get_user_name: (skip)
  * @object: A #DrdDBusLightdmRemoteDisplayFactorySession.
  *
- * Gets the value of the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.UserName">"UserName"</link> D-Bus property.
+ * Gets the value of the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.user_name">"user_name"</link> D-Bus property.
  *
  * Since this D-Bus property is readable, it is meaningful to use this function on both the client- and service-side.
  *
@@ -490,7 +516,7 @@ drd_dbus_lightdm_remote_display_factory_session_get_user_name (DrdDBusLightdmRem
  * drd_dbus_lightdm_remote_display_factory_session_dup_user_name: (skip)
  * @object: A #DrdDBusLightdmRemoteDisplayFactorySession.
  *
- * Gets a copy of the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.UserName">"UserName"</link> D-Bus property.
+ * Gets a copy of the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.user_name">"user_name"</link> D-Bus property.
  *
  * Since this D-Bus property is readable, it is meaningful to use this function on both the client- and service-side.
  *
@@ -509,7 +535,7 @@ drd_dbus_lightdm_remote_display_factory_session_dup_user_name (DrdDBusLightdmRem
  * @object: A #DrdDBusLightdmRemoteDisplayFactorySession.
  * @value: The value to set.
  *
- * Sets the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.UserName">"UserName"</link> D-Bus property to @value.
+ * Sets the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.user_name">"user_name"</link> D-Bus property to @value.
  *
  * Since this D-Bus property is not writable, it is only meaningful to use this function on the service-side.
  */
@@ -523,7 +549,7 @@ drd_dbus_lightdm_remote_display_factory_session_set_user_name (DrdDBusLightdmRem
  * drd_dbus_lightdm_remote_display_factory_session_get_address: (skip)
  * @object: A #DrdDBusLightdmRemoteDisplayFactorySession.
  *
- * Gets the value of the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.Address">"Address"</link> D-Bus property.
+ * Gets the value of the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.address">"address"</link> D-Bus property.
  *
  * Since this D-Bus property is readable, it is meaningful to use this function on both the client- and service-side.
  *
@@ -543,7 +569,7 @@ drd_dbus_lightdm_remote_display_factory_session_get_address (DrdDBusLightdmRemot
  * drd_dbus_lightdm_remote_display_factory_session_dup_address: (skip)
  * @object: A #DrdDBusLightdmRemoteDisplayFactorySession.
  *
- * Gets a copy of the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.Address">"Address"</link> D-Bus property.
+ * Gets a copy of the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.address">"address"</link> D-Bus property.
  *
  * Since this D-Bus property is readable, it is meaningful to use this function on both the client- and service-side.
  *
@@ -562,7 +588,7 @@ drd_dbus_lightdm_remote_display_factory_session_dup_address (DrdDBusLightdmRemot
  * @object: A #DrdDBusLightdmRemoteDisplayFactorySession.
  * @value: The value to set.
  *
- * Sets the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.Address">"Address"</link> D-Bus property to @value.
+ * Sets the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.address">"address"</link> D-Bus property to @value.
  *
  * Since this D-Bus property is not writable, it is only meaningful to use this function on the service-side.
  */
@@ -576,7 +602,7 @@ drd_dbus_lightdm_remote_display_factory_session_set_address (DrdDBusLightdmRemot
  * drd_dbus_lightdm_remote_display_factory_session_get_session_id: (skip)
  * @object: A #DrdDBusLightdmRemoteDisplayFactorySession.
  *
- * Gets the value of the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.SessionId">"SessionId"</link> D-Bus property.
+ * Gets the value of the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.session_id">"session_id"</link> D-Bus property.
  *
  * Since this D-Bus property is readable, it is meaningful to use this function on both the client- and service-side.
  *
@@ -596,7 +622,7 @@ drd_dbus_lightdm_remote_display_factory_session_get_session_id (DrdDBusLightdmRe
  * drd_dbus_lightdm_remote_display_factory_session_dup_session_id: (skip)
  * @object: A #DrdDBusLightdmRemoteDisplayFactorySession.
  *
- * Gets a copy of the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.SessionId">"SessionId"</link> D-Bus property.
+ * Gets a copy of the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.session_id">"session_id"</link> D-Bus property.
  *
  * Since this D-Bus property is readable, it is meaningful to use this function on both the client- and service-side.
  *
@@ -615,7 +641,7 @@ drd_dbus_lightdm_remote_display_factory_session_dup_session_id (DrdDBusLightdmRe
  * @object: A #DrdDBusLightdmRemoteDisplayFactorySession.
  * @value: The value to set.
  *
- * Sets the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.SessionId">"SessionId"</link> D-Bus property to @value.
+ * Sets the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.session_id">"session_id"</link> D-Bus property to @value.
  *
  * Since this D-Bus property is not writable, it is only meaningful to use this function on the service-side.
  */
@@ -623,6 +649,59 @@ void
 drd_dbus_lightdm_remote_display_factory_session_set_session_id (DrdDBusLightdmRemoteDisplayFactorySession *object, const gchar *value)
 {
   g_object_set (G_OBJECT (object), "session-id", value, NULL);
+}
+
+/**
+ * drd_dbus_lightdm_remote_display_factory_session_get_client_id: (skip)
+ * @object: A #DrdDBusLightdmRemoteDisplayFactorySession.
+ *
+ * Gets the value of the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.client_id">"client_id"</link> D-Bus property.
+ *
+ * Since this D-Bus property is readable, it is meaningful to use this function on both the client- and service-side.
+ *
+ * The returned value is only valid until the property changes so on the client-side it is only safe to use this function on the thread where @object was constructed. Use drd_dbus_lightdm_remote_display_factory_session_dup_client_id() if on another thread.
+ *
+ * Returns: (transfer none) (nullable): The property value or %NULL if the property is not set. Do not free the returned value, it belongs to @object.
+ */
+const gchar *
+drd_dbus_lightdm_remote_display_factory_session_get_client_id (DrdDBusLightdmRemoteDisplayFactorySession *object)
+{
+  g_return_val_if_fail (DRD_DBUS_LIGHTDM_IS_REMOTE_DISPLAY_FACTORY_SESSION (object), NULL);
+
+  return DRD_DBUS_LIGHTDM_REMOTE_DISPLAY_FACTORY_SESSION_GET_IFACE (object)->get_client_id (object);
+}
+
+/**
+ * drd_dbus_lightdm_remote_display_factory_session_dup_client_id: (skip)
+ * @object: A #DrdDBusLightdmRemoteDisplayFactorySession.
+ *
+ * Gets a copy of the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.client_id">"client_id"</link> D-Bus property.
+ *
+ * Since this D-Bus property is readable, it is meaningful to use this function on both the client- and service-side.
+ *
+ * Returns: (transfer full) (nullable): The property value or %NULL if the property is not set. The returned value should be freed with g_free().
+ */
+gchar *
+drd_dbus_lightdm_remote_display_factory_session_dup_client_id (DrdDBusLightdmRemoteDisplayFactorySession *object)
+{
+  gchar *value;
+  g_object_get (G_OBJECT (object), "client-id", &value, NULL);
+  return value;
+}
+
+/**
+ * drd_dbus_lightdm_remote_display_factory_session_set_client_id: (skip)
+ * @object: A #DrdDBusLightdmRemoteDisplayFactorySession.
+ * @value: The value to set.
+ *
+ * Sets the <link linkend="gdbus-property-org-deepin-DisplayManager-RemoteDisplayFactory-Session.client_id">"client_id"</link> D-Bus property to @value.
+ *
+ * Since this D-Bus property is not writable, it is only meaningful to use this function on the service-side.
+ */
+void
+drd_dbus_lightdm_remote_display_factory_session_set_client_id (DrdDBusLightdmRemoteDisplayFactorySession *object, const gchar *value)
+{
+  g_object_set (G_OBJECT (object), "client-id", value, NULL);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -673,7 +752,7 @@ drd_dbus_lightdm_remote_display_factory_session_proxy_get_property (GObject     
 {
   const _ExtendedGDBusPropertyInfo *info;
   GVariant *variant;
-  g_assert (prop_id != 0 && prop_id - 1 < 3);
+  g_assert (prop_id != 0 && prop_id - 1 < 4);
   info = (const _ExtendedGDBusPropertyInfo *) _drd_dbus_lightdm_remote_display_factory_session_property_info_pointers[prop_id - 1];
   variant = g_dbus_proxy_get_cached_property (G_DBUS_PROXY (object), info->parent_struct.name);
   if (info->use_gvariant)
@@ -702,7 +781,7 @@ drd_dbus_lightdm_remote_display_factory_session_proxy_set_property_cb (GDBusProx
   if (!_ret)
     {
       g_warning ("Error setting property '%s' on interface org.deepin.DisplayManager.RemoteDisplayFactory.Session: %s (%s, %d)",
-                 info->parent_struct.name,
+                 info->parent_struct.name, 
                  error->message, g_quark_to_string (error->domain), error->code);
       g_error_free (error);
     }
@@ -720,7 +799,7 @@ drd_dbus_lightdm_remote_display_factory_session_proxy_set_property (GObject     
 {
   const _ExtendedGDBusPropertyInfo *info;
   GVariant *variant;
-  g_assert (prop_id != 0 && prop_id - 1 < 3);
+  g_assert (prop_id != 0 && prop_id - 1 < 4);
   info = (const _ExtendedGDBusPropertyInfo *) _drd_dbus_lightdm_remote_display_factory_session_property_info_pointers[prop_id - 1];
   variant = g_dbus_gvalue_to_gvariant (value, G_VARIANT_TYPE (info->parent_struct.signature));
   g_dbus_proxy_call (G_DBUS_PROXY (object),
@@ -808,7 +887,7 @@ drd_dbus_lightdm_remote_display_factory_session_proxy_get_user_name (DrdDBusLigh
   DrdDBusLightdmRemoteDisplayFactorySessionProxy *proxy = DRD_DBUS_LIGHTDM_REMOTE_DISPLAY_FACTORY_SESSION_PROXY (object);
   GVariant *variant;
   const gchar *value = NULL;
-  variant = g_dbus_proxy_get_cached_property (G_DBUS_PROXY (proxy), "UserName");
+  variant = g_dbus_proxy_get_cached_property (G_DBUS_PROXY (proxy), "user_name");
   if (variant != NULL)
     {
       value = g_variant_get_string (variant, NULL);
@@ -823,7 +902,7 @@ drd_dbus_lightdm_remote_display_factory_session_proxy_get_address (DrdDBusLightd
   DrdDBusLightdmRemoteDisplayFactorySessionProxy *proxy = DRD_DBUS_LIGHTDM_REMOTE_DISPLAY_FACTORY_SESSION_PROXY (object);
   GVariant *variant;
   const gchar *value = NULL;
-  variant = g_dbus_proxy_get_cached_property (G_DBUS_PROXY (proxy), "Address");
+  variant = g_dbus_proxy_get_cached_property (G_DBUS_PROXY (proxy), "address");
   if (variant != NULL)
     {
       value = g_variant_get_string (variant, NULL);
@@ -838,7 +917,22 @@ drd_dbus_lightdm_remote_display_factory_session_proxy_get_session_id (DrdDBusLig
   DrdDBusLightdmRemoteDisplayFactorySessionProxy *proxy = DRD_DBUS_LIGHTDM_REMOTE_DISPLAY_FACTORY_SESSION_PROXY (object);
   GVariant *variant;
   const gchar *value = NULL;
-  variant = g_dbus_proxy_get_cached_property (G_DBUS_PROXY (proxy), "SessionId");
+  variant = g_dbus_proxy_get_cached_property (G_DBUS_PROXY (proxy), "session_id");
+  if (variant != NULL)
+    {
+      value = g_variant_get_string (variant, NULL);
+      g_variant_unref (variant);
+    }
+  return value;
+}
+
+static const gchar *
+drd_dbus_lightdm_remote_display_factory_session_proxy_get_client_id (DrdDBusLightdmRemoteDisplayFactorySession *object)
+{
+  DrdDBusLightdmRemoteDisplayFactorySessionProxy *proxy = DRD_DBUS_LIGHTDM_REMOTE_DISPLAY_FACTORY_SESSION_PROXY (object);
+  GVariant *variant;
+  const gchar *value = NULL;
+  variant = g_dbus_proxy_get_cached_property (G_DBUS_PROXY (proxy), "client_id");
   if (variant != NULL)
     {
       value = g_variant_get_string (variant, NULL);
@@ -887,6 +981,7 @@ drd_dbus_lightdm_remote_display_factory_session_proxy_iface_init (DrdDBusLightdm
   iface->get_user_name = drd_dbus_lightdm_remote_display_factory_session_proxy_get_user_name;
   iface->get_address = drd_dbus_lightdm_remote_display_factory_session_proxy_get_address;
   iface->get_session_id = drd_dbus_lightdm_remote_display_factory_session_proxy_get_session_id;
+  iface->get_client_id = drd_dbus_lightdm_remote_display_factory_session_proxy_get_client_id;
 }
 
 /**
@@ -1254,7 +1349,11 @@ drd_dbus_lightdm_remote_display_factory_session_skeleton_dbus_interface_get_prop
 
   GVariantBuilder builder;
   guint n;
-  g_variant_builder_init (&builder, G_VARIANT_TYPE ("a{sv}"));
+#if GLIB_VERSION_MAX_ALLOWED >= GLIB_VERSION_2_84
+  g_variant_builder_init_static (&builder, G_VARIANT_TYPE ("a{sv}"));
+#else
+  g_variant_builder_init(&builder, G_VARIANT_TYPE ("a{sv}"));
+#endif
   if (_drd_dbus_lightdm_remote_display_factory_session_interface_info.parent_struct.properties == NULL)
     goto out;
   for (n = 0; _drd_dbus_lightdm_remote_display_factory_session_interface_info.parent_struct.properties[n] != NULL; n++)
@@ -1313,7 +1412,7 @@ drd_dbus_lightdm_remote_display_factory_session_skeleton_finalize (GObject *obje
 {
   DrdDBusLightdmRemoteDisplayFactorySessionSkeleton *skeleton = DRD_DBUS_LIGHTDM_REMOTE_DISPLAY_FACTORY_SESSION_SKELETON (object);
   guint n;
-  for (n = 0; n < 3; n++)
+  for (n = 0; n < 4; n++)
     g_value_unset (&skeleton->priv->properties[n]);
   g_free (skeleton->priv->properties);
   g_list_free_full (skeleton->priv->changed_properties, (GDestroyNotify) _changed_property_free);
@@ -1331,7 +1430,7 @@ drd_dbus_lightdm_remote_display_factory_session_skeleton_get_property (GObject  
   GParamSpec   *pspec G_GNUC_UNUSED)
 {
   DrdDBusLightdmRemoteDisplayFactorySessionSkeleton *skeleton = DRD_DBUS_LIGHTDM_REMOTE_DISPLAY_FACTORY_SESSION_SKELETON (object);
-  g_assert (prop_id != 0 && prop_id - 1 < 3);
+  g_assert (prop_id != 0 && prop_id - 1 < 4);
   g_mutex_lock (&skeleton->priv->lock);
   g_value_copy (&skeleton->priv->properties[prop_id - 1], value);
   g_mutex_unlock (&skeleton->priv->lock);
@@ -1347,8 +1446,13 @@ _drd_dbus_lightdm_remote_display_factory_session_emit_changed (gpointer user_dat
   guint num_changes;
 
   g_mutex_lock (&skeleton->priv->lock);
+#if GLIB_VERSION_MAX_ALLOWED >= GLIB_VERSION_2_84
+  g_variant_builder_init_static (&builder, G_VARIANT_TYPE ("a{sv}"));
+  g_variant_builder_init_static (&invalidated_builder, G_VARIANT_TYPE ("as"));
+#else
   g_variant_builder_init (&builder, G_VARIANT_TYPE ("a{sv}"));
   g_variant_builder_init (&invalidated_builder, G_VARIANT_TYPE ("as"));
+#endif
   for (l = skeleton->priv->changed_properties, num_changes = 0; l != NULL; l = l->next)
     {
       ChangedProperty *cp = l->data;
@@ -1450,7 +1554,7 @@ drd_dbus_lightdm_remote_display_factory_session_skeleton_set_property (GObject  
 {
   const _ExtendedGDBusPropertyInfo *info;
   DrdDBusLightdmRemoteDisplayFactorySessionSkeleton *skeleton = DRD_DBUS_LIGHTDM_REMOTE_DISPLAY_FACTORY_SESSION_SKELETON (object);
-  g_assert (prop_id != 0 && prop_id - 1 < 3);
+  g_assert (prop_id != 0 && prop_id - 1 < 4);
   info = (const _ExtendedGDBusPropertyInfo *) _drd_dbus_lightdm_remote_display_factory_session_property_info_pointers[prop_id - 1];
   g_mutex_lock (&skeleton->priv->lock);
   g_object_freeze_notify (object);
@@ -1477,10 +1581,11 @@ drd_dbus_lightdm_remote_display_factory_session_skeleton_init (DrdDBusLightdmRem
 
   g_mutex_init (&skeleton->priv->lock);
   skeleton->priv->context = g_main_context_ref_thread_default ();
-  skeleton->priv->properties = g_new0 (GValue, 3);
+  skeleton->priv->properties = g_new0 (GValue, 4);
   g_value_init (&skeleton->priv->properties[0], G_TYPE_STRING);
   g_value_init (&skeleton->priv->properties[1], G_TYPE_STRING);
   g_value_init (&skeleton->priv->properties[2], G_TYPE_STRING);
+  g_value_init (&skeleton->priv->properties[3], G_TYPE_STRING);
 }
 
 static const gchar *
@@ -1512,6 +1617,17 @@ drd_dbus_lightdm_remote_display_factory_session_skeleton_get_session_id (DrdDBus
   const gchar *value;
   g_mutex_lock (&skeleton->priv->lock);
   value = g_marshal_value_peek_string (&(skeleton->priv->properties[2]));
+  g_mutex_unlock (&skeleton->priv->lock);
+  return value;
+}
+
+static const gchar *
+drd_dbus_lightdm_remote_display_factory_session_skeleton_get_client_id (DrdDBusLightdmRemoteDisplayFactorySession *object)
+{
+  DrdDBusLightdmRemoteDisplayFactorySessionSkeleton *skeleton = DRD_DBUS_LIGHTDM_REMOTE_DISPLAY_FACTORY_SESSION_SKELETON (object);
+  const gchar *value;
+  g_mutex_lock (&skeleton->priv->lock);
+  value = g_marshal_value_peek_string (&(skeleton->priv->properties[3]));
   g_mutex_unlock (&skeleton->priv->lock);
   return value;
 }
@@ -1548,6 +1664,7 @@ drd_dbus_lightdm_remote_display_factory_session_skeleton_iface_init (DrdDBusLigh
   iface->get_user_name = drd_dbus_lightdm_remote_display_factory_session_skeleton_get_user_name;
   iface->get_address = drd_dbus_lightdm_remote_display_factory_session_skeleton_get_address;
   iface->get_session_id = drd_dbus_lightdm_remote_display_factory_session_skeleton_get_session_id;
+  iface->get_client_id = drd_dbus_lightdm_remote_display_factory_session_skeleton_get_client_id;
 }
 
 /**
@@ -1578,11 +1695,11 @@ drd_dbus_lightdm_remote_display_factory_session_skeleton_new (void)
 
 /* ---- Introspection data for org.deepin.DisplayManager.RemoteDisplayFactory ---- */
 
-static const _ExtendedGDBusArgInfo _drd_dbus_lightdm_remote_display_factory_method_info_create_remote_greeter_display_IN_ARG_remote_id =
+static const _ExtendedGDBusArgInfo _drd_dbus_lightdm_remote_display_factory_method_info_create_remote_greeter_display_IN_ARG_client_id =
 {
   {
     -1,
-    (gchar *) "remote_id",
+    (gchar *) "client_id",
     (gchar *) "u",
     NULL
   },
@@ -1624,7 +1741,7 @@ static const _ExtendedGDBusArgInfo _drd_dbus_lightdm_remote_display_factory_meth
 
 static const GDBusArgInfo * const _drd_dbus_lightdm_remote_display_factory_method_info_create_remote_greeter_display_IN_ARG_pointers[] =
 {
-  &_drd_dbus_lightdm_remote_display_factory_method_info_create_remote_greeter_display_IN_ARG_remote_id.parent_struct,
+  &_drd_dbus_lightdm_remote_display_factory_method_info_create_remote_greeter_display_IN_ARG_client_id.parent_struct,
   &_drd_dbus_lightdm_remote_display_factory_method_info_create_remote_greeter_display_IN_ARG_width.parent_struct,
   &_drd_dbus_lightdm_remote_display_factory_method_info_create_remote_greeter_display_IN_ARG_height.parent_struct,
   &_drd_dbus_lightdm_remote_display_factory_method_info_create_remote_greeter_display_IN_ARG_address.parent_struct,
@@ -1661,11 +1778,11 @@ static const _ExtendedGDBusMethodInfo _drd_dbus_lightdm_remote_display_factory_m
   FALSE
 };
 
-static const _ExtendedGDBusArgInfo _drd_dbus_lightdm_remote_display_factory_method_info_create_single_logon_session_IN_ARG_remote_id =
+static const _ExtendedGDBusArgInfo _drd_dbus_lightdm_remote_display_factory_method_info_create_single_logon_session_IN_ARG_client_id =
 {
   {
     -1,
-    (gchar *) "remote_id",
+    (gchar *) "client_id",
     (gchar *) "y",
     NULL
   },
@@ -1718,7 +1835,7 @@ static const _ExtendedGDBusArgInfo _drd_dbus_lightdm_remote_display_factory_meth
 
 static const GDBusArgInfo * const _drd_dbus_lightdm_remote_display_factory_method_info_create_single_logon_session_IN_ARG_pointers[] =
 {
-  &_drd_dbus_lightdm_remote_display_factory_method_info_create_single_logon_session_IN_ARG_remote_id.parent_struct,
+  &_drd_dbus_lightdm_remote_display_factory_method_info_create_single_logon_session_IN_ARG_client_id.parent_struct,
   &_drd_dbus_lightdm_remote_display_factory_method_info_create_single_logon_session_IN_ARG_width.parent_struct,
   &_drd_dbus_lightdm_remote_display_factory_method_info_create_single_logon_session_IN_ARG_height.parent_struct,
   &_drd_dbus_lightdm_remote_display_factory_method_info_create_single_logon_session_IN_ARG_user_name.parent_struct,
@@ -1860,7 +1977,7 @@ drd_dbus_lightdm_remote_display_factory_default_init (DrdDBusLightdmRemoteDispla
    * DrdDBusLightdmRemoteDisplayFactory::handle-create-remote-greeter-display:
    * @object: A #DrdDBusLightdmRemoteDisplayFactory.
    * @invocation: A #GDBusMethodInvocation.
-   * @arg_remote_id: Argument passed by remote caller.
+   * @arg_client_id: Argument passed by remote caller.
    * @arg_width: Argument passed by remote caller.
    * @arg_height: Argument passed by remote caller.
    * @arg_address: Argument passed by remote caller.
@@ -1886,7 +2003,7 @@ drd_dbus_lightdm_remote_display_factory_default_init (DrdDBusLightdmRemoteDispla
    * DrdDBusLightdmRemoteDisplayFactory::handle-create-single-logon-session:
    * @object: A #DrdDBusLightdmRemoteDisplayFactory.
    * @invocation: A #GDBusMethodInvocation.
-   * @arg_remote_id: Argument passed by remote caller.
+   * @arg_client_id: Argument passed by remote caller.
    * @arg_width: Argument passed by remote caller.
    * @arg_height: Argument passed by remote caller.
    * @arg_user_name: Argument passed by remote caller.
@@ -1914,7 +2031,7 @@ drd_dbus_lightdm_remote_display_factory_default_init (DrdDBusLightdmRemoteDispla
 /**
  * drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_display:
  * @proxy: A #DrdDBusLightdmRemoteDisplayFactoryProxy.
- * @arg_remote_id: Argument to pass with the method invocation.
+ * @arg_client_id: Argument to pass with the method invocation.
  * @arg_width: Argument to pass with the method invocation.
  * @arg_height: Argument to pass with the method invocation.
  * @arg_address: Argument to pass with the method invocation.
@@ -1931,7 +2048,7 @@ drd_dbus_lightdm_remote_display_factory_default_init (DrdDBusLightdmRemoteDispla
 void
 drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_display (
     DrdDBusLightdmRemoteDisplayFactory *proxy,
-    guint arg_remote_id,
+    guint arg_client_id,
     guint arg_width,
     guint arg_height,
     const gchar *arg_address,
@@ -1942,7 +2059,7 @@ drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_display (
   g_dbus_proxy_call (G_DBUS_PROXY (proxy),
     "CreateRemoteGreeterDisplay",
     g_variant_new ("(uuus)",
-                   arg_remote_id,
+                   arg_client_id,
                    arg_width,
                    arg_height,
                    arg_address),
@@ -1986,7 +2103,7 @@ _out:
 /**
  * drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_display_sync:
  * @proxy: A #DrdDBusLightdmRemoteDisplayFactoryProxy.
- * @arg_remote_id: Argument to pass with the method invocation.
+ * @arg_client_id: Argument to pass with the method invocation.
  * @arg_width: Argument to pass with the method invocation.
  * @arg_height: Argument to pass with the method invocation.
  * @arg_address: Argument to pass with the method invocation.
@@ -2003,7 +2120,7 @@ _out:
 gboolean
 drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_display_sync (
     DrdDBusLightdmRemoteDisplayFactory *proxy,
-    guint arg_remote_id,
+    guint arg_client_id,
     guint arg_width,
     guint arg_height,
     const gchar *arg_address,
@@ -2015,7 +2132,7 @@ drd_dbus_lightdm_remote_display_factory_call_create_remote_greeter_display_sync 
   _ret = g_dbus_proxy_call_sync (G_DBUS_PROXY (proxy),
     "CreateRemoteGreeterDisplay",
     g_variant_new ("(uuus)",
-                   arg_remote_id,
+                   arg_client_id,
                    arg_width,
                    arg_height,
                    arg_address),
@@ -2036,7 +2153,7 @@ _out:
 /**
  * drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session:
  * @proxy: A #DrdDBusLightdmRemoteDisplayFactoryProxy.
- * @arg_remote_id: Argument to pass with the method invocation.
+ * @arg_client_id: Argument to pass with the method invocation.
  * @arg_width: Argument to pass with the method invocation.
  * @arg_height: Argument to pass with the method invocation.
  * @arg_user_name: Argument to pass with the method invocation.
@@ -2054,7 +2171,7 @@ _out:
 void
 drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session (
     DrdDBusLightdmRemoteDisplayFactory *proxy,
-    guchar arg_remote_id,
+    guchar arg_client_id,
     guint arg_width,
     guint arg_height,
     const gchar *arg_user_name,
@@ -2066,7 +2183,7 @@ drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session (
   g_dbus_proxy_call (G_DBUS_PROXY (proxy),
     "CreateSingleLogonSession",
     g_variant_new ("(yuuss)",
-                   arg_remote_id,
+                   arg_client_id,
                    arg_width,
                    arg_height,
                    arg_user_name,
@@ -2111,7 +2228,7 @@ _out:
 /**
  * drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session_sync:
  * @proxy: A #DrdDBusLightdmRemoteDisplayFactoryProxy.
- * @arg_remote_id: Argument to pass with the method invocation.
+ * @arg_client_id: Argument to pass with the method invocation.
  * @arg_width: Argument to pass with the method invocation.
  * @arg_height: Argument to pass with the method invocation.
  * @arg_user_name: Argument to pass with the method invocation.
@@ -2129,7 +2246,7 @@ _out:
 gboolean
 drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session_sync (
     DrdDBusLightdmRemoteDisplayFactory *proxy,
-    guchar arg_remote_id,
+    guchar arg_client_id,
     guint arg_width,
     guint arg_height,
     const gchar *arg_user_name,
@@ -2142,7 +2259,7 @@ drd_dbus_lightdm_remote_display_factory_call_create_single_logon_session_sync (
   _ret = g_dbus_proxy_call_sync (G_DBUS_PROXY (proxy),
     "CreateSingleLogonSession",
     g_variant_new ("(yuuss)",
-                   arg_remote_id,
+                   arg_client_id,
                    arg_width,
                    arg_height,
                    arg_user_name,
@@ -2731,7 +2848,11 @@ drd_dbus_lightdm_remote_display_factory_skeleton_dbus_interface_get_properties (
 
   GVariantBuilder builder;
   guint n;
-  g_variant_builder_init (&builder, G_VARIANT_TYPE ("a{sv}"));
+#if GLIB_VERSION_MAX_ALLOWED >= GLIB_VERSION_2_84
+  g_variant_builder_init_static (&builder, G_VARIANT_TYPE ("a{sv}"));
+#else
+  g_variant_builder_init(&builder, G_VARIANT_TYPE ("a{sv}"));
+#endif
   if (_drd_dbus_lightdm_remote_display_factory_interface_info.parent_struct.properties == NULL)
     goto out;
   for (n = 0; _drd_dbus_lightdm_remote_display_factory_interface_info.parent_struct.properties[n] != NULL; n++)
