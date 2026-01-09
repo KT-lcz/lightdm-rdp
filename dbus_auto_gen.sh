@@ -1,0 +1,3 @@
+#!/bin/bash
+/usr/bin/gdbus-codegen --c-generate-autocleanup all --interface-prefix org.deepin.DisplayManager. --c-namespace DrdDBusLightdm --header --output src/drd-dbus-lightdm.h ./data/org.deepin.DisplayManager.xml
+/usr/bin/gdbus-codegen --c-generate-autocleanup all --interface-prefix org.deepin.DisplayManager. --c-namespace DrdDBusLightdm --body --output src/drd-dbus-lightdm.c ./data/org.deepin.DisplayManager.xml
