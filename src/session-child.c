@@ -367,7 +367,7 @@ session_child_run (int argc, char **argv)
     g_autofree gchar *remote_host_name = read_string ();
     g_autofree gchar *xdisplay = read_string ();
     g_autoptr(XAuthority) x_authority = read_xauth ();
-
+    g_debug("service is %s\n",service);
     setlocale (LC_ALL, "");
 
     /* Setup PAM */

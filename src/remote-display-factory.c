@@ -8,7 +8,10 @@
 #include <gio/gio.h>
 #include <glib/gstdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 
 #include "remote-display-factory.h"
 
@@ -36,6 +39,7 @@ typedef struct
     guint32 width;
     guint32 height;
     gchar *user_name;
+    gchar *password;
     gchar *address;
     gchar *object_path;
     DrdDBusLightdmRemoteDisplayFactorySession *dbus_session;
@@ -45,9 +49,7 @@ typedef struct
     gchar *config_path;
     guint display_number;
     gulong seat_stopped_handler;
-    gulong seat_session_added_handler;
-    gulong seat_session_removed_handler;
-    guint session_id;
+    gchar *session_id;
 } RemoteDisplaySession;
 
 static DisplayManager *remote_display_manager = NULL;
@@ -59,19 +61,342 @@ static GHashTable *remote_display_numbers_in_use = NULL;
 static guint remote_display_session_index = 0;
 static guint remote_display_next_display_number = 0;
 
+static gchar *
+remote_display_session_read_user_from_auth_fd (GUnixFDList *fd_list,
+                                               GVariant *auth_fd,
+                                               gchar **out_user_name,
+                                               gchar **out_password,
+                                               GError **error)
+{
+    if (!fd_list)
+    {
+        g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Missing auth fd list");
+        return NULL;
+    }
+    if (!auth_fd || !g_variant_is_of_type (auth_fd, G_VARIANT_TYPE_HANDLE))
+    {
+        g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Invalid auth fd handle");
+        return NULL;
+    }
+    if (!out_user_name || !out_password)
+    {
+        g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Missing auth output target");
+        return NULL;
+    }
+    *out_user_name = NULL;
+    *out_password = NULL;
+
+    g_autoptr(GError) fd_error = NULL;
+    int fd = g_unix_fd_list_get (fd_list, g_variant_get_handle (auth_fd), &fd_error);
+    if (fd < 0)
+    {
+        const gchar *message = fd_error ? fd_error->message : "unknown error";
+        g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Failed to fetch auth fd: %s", message);
+        return NULL;
+    }
+
+    struct stat st;
+    if (fstat (fd, &st) != 0)
+    {
+        g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Failed to stat auth fd: %s", g_strerror (errno));
+        close (fd);
+        return NULL;
+    }
+    if (st.st_size <= 0)
+    {
+        g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Auth fd has no data");
+        close (fd);
+        return NULL;
+    }
+
+    void *map = mmap (NULL, (size_t) st.st_size, PROT_READ, MAP_SHARED, fd, 0);
+    if (map == MAP_FAILED)
+    {
+        g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Failed to map auth fd: %s", g_strerror (errno));
+        close (fd);
+        return NULL;
+    }
+
+    g_autofree gchar *payload = g_strndup ((const gchar *) map, (gsize) st.st_size);
+    munmap (map, (size_t) st.st_size);
+    close (fd);
+
+    if (!payload || payload[0] == '\0')
+    {
+        g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Auth fd payload is empty");
+        return NULL;
+    }
+
+    g_auto(GStrv) lines = g_strsplit (payload, "\n", 3);
+    if (!lines || !lines[0] || !lines[1])
+    {
+        g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Auth fd payload must include username and password");
+        return NULL;
+    }
+
+    g_autofree gchar *user_name = g_strdup (lines[0]);
+    g_autofree gchar *password = g_strdup (lines[1]);
+    gsize user_len = strlen (user_name);
+    if (user_len > 0 && user_name[user_len - 1] == '\r')
+        user_name[user_len - 1] = '\0';
+    gsize password_len = strlen (password);
+    if (password_len > 0 && password[password_len - 1] == '\r')
+        password[password_len - 1] = '\0';
+
+    if (user_name[0] == '\0' || password[0] == '\0')
+    {
+        g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Auth fd payload must include non-empty username and password");
+        return NULL;
+    }
+
+    *out_user_name = g_steal_pointer (&user_name);
+    *out_password = g_steal_pointer (&password);
+    return *out_user_name;
+}
+
 static RemoteDisplaySession *remote_display_session_create (guint32 remote_id,
-                                                            guint32 width,
-                                                            guint32 height,
-                                                            const gchar *user_name,
-                                                            const gchar *address,
-                                                            RemoteDisplaySessionMode mode,
-                                                            GError **error);
+                                                             guint32 width,
+                                                             guint32 height,
+                                                             const gchar *user_name,
+                                                             const gchar *password,
+                                                             const gchar *address,
+                                                             RemoteDisplaySessionMode mode,
+                                                             GError **error);
 static void remote_display_session_free (RemoteDisplaySession *session);
+
+static void remote_display_session_set_session_id (RemoteDisplaySession *session,const gchar *new_id);
 
 static gpointer
 remote_display_session_key (guint32 remote_id)
 {
     return GUINT_TO_POINTER ((guint) remote_id);
+}
+
+static gboolean
+remote_display_parse_client_id (const gchar *client_id, guint32 *out_remote_id, GError **error)
+{
+    g_return_val_if_fail (out_remote_id != NULL, FALSE);
+
+    if (!client_id || client_id[0] == '\0')
+    {
+        g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "client_id is required");
+        return FALSE;
+    }
+
+    errno = 0;
+    gchar *endptr = NULL;
+    guint64 value = g_ascii_strtoull (client_id, &endptr, 10);
+    if (errno != 0 || endptr == client_id || endptr[0] != '\0' || value > G_MAXUINT32)
+    {
+        g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Invalid client_id '%s'", client_id);
+        return FALSE;
+    }
+
+    *out_remote_id = (guint32) value;
+    return TRUE;
+}
+
+static RemoteDisplaySession *
+remote_display_factory_find_remote_session_by_user_name (const gchar *user_name)
+{
+    if (!remote_display_sessions || !user_name || user_name[0] == '\0')
+        return NULL;
+
+    GHashTableIter iter;
+    gpointer key = NULL;
+    gpointer value = NULL;
+    g_hash_table_iter_init (&iter, remote_display_sessions);
+    while (g_hash_table_iter_next (&iter, &key, &value))
+    {
+        RemoteDisplaySession *session = value;
+        if (!session)
+            continue;
+        if (g_strcmp0 (session->user_name, user_name) != 0)
+            continue;
+        if (!session->seat || seat_get_is_stopping (session->seat))
+            continue;
+        if (!session->dbus_session)
+            continue;
+
+        return session;
+    }
+
+    return NULL;
+}
+
+static gboolean
+remote_display_session_seat_has_user (RemoteDisplaySession *session,
+                                      Seat               *incoming_seat,
+                                      const gchar        *user_name)
+{
+    if (!session || !session->seat || seat_get_is_stopping (session->seat))
+        return FALSE;
+
+    if (session->seat == incoming_seat)
+        return FALSE;
+
+    if (!user_name || user_name[0] == '\0')
+        return FALSE;
+
+    return (session->user_name && session->user_name[0] != '\0' && g_strcmp0 (session->user_name, user_name) == 0);
+}
+
+gboolean
+remote_display_factory_update_session_identity (Seat        *seat,
+                                                const gchar *user_name,
+                                                const gchar *login1_session_id)
+{
+    if (!remote_display_sessions || !seat)
+        return FALSE;
+    if (!user_name || user_name[0] == '\0')
+        return FALSE;
+
+    GHashTableIter iter;
+    gpointer key = NULL;
+    gpointer value = NULL;
+    g_hash_table_iter_init (&iter, remote_display_sessions);
+    while (g_hash_table_iter_next (&iter, &key, &value))
+    {
+        RemoteDisplaySession *session = value;
+        if (!session || session->seat != seat)
+            continue;
+        if (!session->dbus_session)
+            return FALSE;
+
+        if (!session->user_name || session->user_name[0] == '\0')
+            session->user_name = g_strdup (user_name);
+        else if (g_strcmp0 (session->user_name, user_name) != 0)
+            g_warning ("Remote session user mismatch: existing='%s' new='%s'", session->user_name, user_name);
+
+        seat_set_property (seat, "remote-user", session->user_name);
+        drd_dbus_lightdm_remote_display_factory_session_set_user_name (session->dbus_session, session->user_name);
+
+        if (login1_session_id && login1_session_id[0] != '\0')
+            remote_display_session_set_session_id (session, login1_session_id);
+
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+gboolean
+remote_display_factory_attach_existing_session (Seat        *incoming_seat,
+                                                const gchar *user_name,
+                                                const gchar *client_id,
+                                                const gchar *address)
+{
+    if (!remote_display_sessions || !incoming_seat)
+        return FALSE;
+
+    RemoteDisplaySession *match = NULL;
+    guint matches = 0;
+    GHashTableIter iter;
+    gpointer key = NULL;
+    gpointer value = NULL;
+
+    g_hash_table_iter_init (&iter, remote_display_sessions);
+    while (g_hash_table_iter_next (&iter, &key, &value))
+    {
+        RemoteDisplaySession *session = value;
+        if (!remote_display_session_seat_has_user (session, incoming_seat, user_name))
+            continue;
+
+        matches++;
+        if (!match)
+            match = session;
+    }
+
+    if (!match)
+        return FALSE;
+
+    if (matches > 1)
+        g_warning ("Multiple remote sessions match user '%s' (%u), using first", user_name, matches);
+
+    if (!match->dbus_session)
+        return FALSE;
+
+    g_free (match->address);
+    match->address = g_strdup (address);
+
+    if (!match->user_name || match->user_name[0] == '\0')
+    {
+        g_free (match->user_name);
+        match->user_name = g_strdup (user_name);
+    }
+
+    if (match->seat && !seat_get_is_stopping (match->seat))
+    {
+        seat_set_property (match->seat, "remote-id", client_id);
+        seat_set_property (match->seat, "remote-address", match->address ? match->address : "");
+        if (match->user_name && match->user_name[0] != '\0')
+            seat_set_property (match->seat, "remote-user", match->user_name);
+    }
+
+    drd_dbus_lightdm_remote_display_factory_session_set_address (match->dbus_session,
+                                                                 match->address ? match->address : "");
+    drd_dbus_lightdm_remote_display_factory_session_set_client_id (match->dbus_session, client_id);
+    drd_dbus_lightdm_remote_display_factory_session_set_user_name (match->dbus_session,
+                                                                   match->user_name ? match->user_name : "");
+
+    return TRUE;
+}
+
+gboolean
+remote_display_factory_update_session_identity_for_client_id (const gchar *client_id,
+                                                              const gchar *user_name,
+                                                              const gchar *login1_session_id)
+{
+    if (!remote_display_sessions)
+        return FALSE;
+    if (!client_id || client_id[0] == '\0')
+        return FALSE;
+    if (!user_name || user_name[0] == '\0')
+        return FALSE;
+
+    g_autoptr(GError) parse_error = NULL;
+    guint32 remote_id = 0;
+    if (!remote_display_parse_client_id (client_id, &remote_id, &parse_error))
+        return FALSE;
+
+    RemoteDisplaySession *session = g_hash_table_lookup (remote_display_sessions, remote_display_session_key (remote_id));
+    if (!session || !session->dbus_session)
+        return FALSE;
+
+    /* Allow overriding greeter-user (e.g. 'lightdm') in greeter-mode once */
+    g_autofree gchar *greeter_user = config_get_string (config_get_instance (), "LightDM", "greeter-user");
+
+    if (!session->user_name || session->user_name[0] == '\0')
+    {
+        session->user_name = g_strdup (user_name);
+    }
+    else if (g_strcmp0 (session->user_name, user_name) != 0)
+    {
+        if (session->mode == REMOTE_DISPLAY_SESSION_MODE_GREETER &&
+            greeter_user && greeter_user[0] != '\0' &&
+            g_strcmp0 (session->user_name, greeter_user) == 0)
+        {
+            g_free (session->user_name);
+            session->user_name = g_strdup (user_name);
+        }
+        else
+        {
+            g_warning ("Remote session user mismatch: existing='%s' new='%s'", session->user_name, user_name);
+        }
+    }
+
+    if (session->seat && !seat_get_is_stopping (session->seat) && session->user_name)
+        seat_set_property (session->seat, "remote-user", session->user_name);
+
+    drd_dbus_lightdm_remote_display_factory_session_set_user_name (session->dbus_session,
+                                                                   session->user_name ? session->user_name : "");
+
+    if (login1_session_id && login1_session_id[0] != '\0')
+    {
+        remote_display_session_set_session_id (session, login1_session_id);
+    }
+
+    return TRUE;
 }
 
 static guint
@@ -127,11 +452,12 @@ remote_display_session_register_object (RemoteDisplaySession *session, GError **
     drd_dbus_lightdm_remote_display_factory_session_set_user_name (session_skeleton,
                                                                    session->user_name ? session->user_name : "");
     drd_dbus_lightdm_remote_display_factory_session_set_address (session_skeleton,
-                                                                 session->address ? session->address : "");
+                                                                    session->address ? session->address : "");
     drd_dbus_lightdm_remote_display_factory_session_set_session_id (session_skeleton,
-                                                                    session->session_id);
+                                                                    session->session_id ? session->session_id : "");
+    g_autofree gchar *remote_id_str = g_strdup_printf ("%u", session->remote_id);
     drd_dbus_lightdm_remote_display_factory_session_set_client_id (session_skeleton,
-                                                                   session->remote_id);
+                                                                    remote_id_str);
 
     if (!g_dbus_interface_skeleton_export (G_DBUS_INTERFACE_SKELETON (session_skeleton),
                                            remote_display_connection,
@@ -268,138 +594,20 @@ remote_display_session_cleanup_config (RemoteDisplaySession *session)
     }
 }
 
-static guint
-remote_display_session_parse_login1_id (const gchar *login1_id)
-{
-    if (!login1_id || login1_id[0] == '\0')
-        return 0;
-
-    gchar *end = NULL;
-    guint64 value = g_ascii_strtoull (login1_id, &end, 10);
-    if (!end || *end != '\0' || value > G_MAXUINT32)
-        return 0;
-
-    return (guint) value;
-}
-
 static void
-remote_display_session_set_session_id (RemoteDisplaySession *session, guint new_id)
+remote_display_session_set_session_id (RemoteDisplaySession *session, const gchar *new_id)
 {
     g_return_if_fail (session != NULL);
 
-    if (session->session_id == new_id)
+    const gchar *id = new_id ? new_id : "";
+
+    if (g_strcmp0 (session->session_id, id) == 0)
         return;
 
-    session->session_id = new_id;
+    g_free (session->session_id);
+    session->session_id = g_strdup (id);
     if (session->dbus_session)
-        drd_dbus_lightdm_remote_display_factory_session_set_session_id (session->dbus_session, new_id);
-}
-
-static const gchar *
-remote_display_session_select_login1_id (RemoteDisplaySession *session)
-{
-    if (!session->seat)
-        return NULL;
-
-    GList *sessions = seat_get_sessions (session->seat);
-
-    for (GList *link = sessions; link; link = link->next)
-    {
-        Session *seat_session = link->data;
-        if (session_get_is_stopping (seat_session) || IS_GREETER_SESSION (seat_session))
-            continue;
-        const gchar *login1_id = session_get_login1_session_id (seat_session);
-        if (login1_id && login1_id[0])
-            return login1_id;
-    }
-
-    for (GList *link = sessions; link; link = link->next)
-    {
-        Session *seat_session = link->data;
-        if (session_get_is_stopping (seat_session) || !IS_GREETER_SESSION (seat_session))
-            continue;
-        const gchar *login1_id = session_get_login1_session_id (seat_session);
-        if (login1_id && login1_id[0])
-            return login1_id;
-    }
-
-    return NULL;
-}
-
-static void
-remote_display_session_refresh_session_id (RemoteDisplaySession *session)
-{
-    g_return_if_fail (session != NULL);
-    const gchar *login1_id = remote_display_session_select_login1_id (session);
-    remote_display_session_set_session_id (session, remote_display_session_parse_login1_id (login1_id));
-}
-
-static void
-remote_display_session_session_login1_notify_cb (Session *seat_session,
-                                                 G_GNUC_UNUSED GParamSpec *pspec,
-                                                 RemoteDisplaySession *session)
-{
-    (void) seat_session;
-    remote_display_session_refresh_session_id (session);
-}
-
-static void
-remote_display_session_session_stopped_cb (Session *seat_session, RemoteDisplaySession *session)
-{
-    g_signal_handlers_disconnect_matched (seat_session, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, session);
-    remote_display_session_refresh_session_id (session);
-}
-
-static void
-remote_display_session_watch_session (RemoteDisplaySession *session, Session *seat_session)
-{
-    g_signal_connect (seat_session,
-                      "notify::login1-session-id",
-                      G_CALLBACK (remote_display_session_session_login1_notify_cb),
-                      session);
-    g_signal_connect (seat_session,
-                      SESSION_SIGNAL_STOPPED,
-                      G_CALLBACK (remote_display_session_session_stopped_cb),
-                      session);
-}
-
-static void
-remote_display_session_watch_existing_sessions (RemoteDisplaySession *session)
-{
-    if (!session->seat)
-        return;
-
-    for (GList *link = seat_get_sessions (session->seat); link; link = link->next)
-        remote_display_session_watch_session (session, link->data);
-}
-
-static void
-remote_display_session_unwatch_sessions (RemoteDisplaySession *session)
-{
-    if (!session->seat)
-        return;
-
-    for (GList *link = seat_get_sessions (session->seat); link; link = link->next)
-        g_signal_handlers_disconnect_matched (link->data, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, session);
-}
-
-static void
-remote_display_session_seat_session_added_cb (Seat *seat,
-                                              Session *seat_session,
-                                              RemoteDisplaySession *session)
-{
-    (void) seat;
-    remote_display_session_watch_session (session, seat_session);
-    remote_display_session_refresh_session_id (session);
-}
-
-static void
-remote_display_session_seat_session_removed_cb (Seat *seat,
-                                                G_GNUC_UNUSED Session *seat_session,
-                                                RemoteDisplaySession *session)
-{
-    (void) seat;
-    remote_display_session_refresh_session_id (session);
+        drd_dbus_lightdm_remote_display_factory_session_set_session_id (session->dbus_session, session->session_id);
 }
 
 static void
@@ -418,11 +626,6 @@ remote_display_session_free (RemoteDisplaySession *session)
     {
         if (session->seat_stopped_handler)
             g_signal_handler_disconnect (session->seat, session->seat_stopped_handler);
-        if (session->seat_session_added_handler)
-            g_signal_handler_disconnect (session->seat, session->seat_session_added_handler);
-        if (session->seat_session_removed_handler)
-            g_signal_handler_disconnect (session->seat, session->seat_session_removed_handler);
-        remote_display_session_unwatch_sessions (session);
         if (!seat_get_is_stopping (session->seat))
             seat_stop (session->seat);
         g_clear_object (&session->seat);
@@ -432,8 +635,10 @@ remote_display_session_free (RemoteDisplaySession *session)
     remote_display_release_display_number (session->display_number);
 
     g_clear_pointer (&session->user_name, g_free);
+    g_clear_pointer (&session->password, g_free);
     g_clear_pointer (&session->address, g_free);
     g_clear_pointer (&session->object_path, g_free);
+    g_clear_pointer (&session->session_id, g_free);
     g_free (session);
 }
 
@@ -453,6 +658,13 @@ remote_display_session_configure_seat (RemoteDisplaySession *session, Seat *seat
     seat_config_apply (seat, NULL);
     seat_set_property (seat, "allow-user-switching", "false");
     seat_set_property (seat, "xserver-share", "true");
+    // 远程会话禁用快速登录和自动登录
+    seat_set_property(seat,"autologin-user","");
+    seat_set_property(seat,"quicklogin-enabled","false");
+    seat_set_property (seat, "autologin-in-background","false");
+    seat_set_property(seat,"autologin-guest","false");
+    seat_set_property(seat,"autologin-user-timeout",0);
+    seat_set_property(seat,"autologin-session","");
 
     g_autofree gchar *display_str = g_strdup_printf ("%u", session->display_number);
     g_autofree gchar *width_str = g_strdup_printf ("%u", session->width);
@@ -472,10 +684,8 @@ remote_display_session_configure_seat (RemoteDisplaySession *session, Seat *seat
 
     if (session->mode == REMOTE_DISPLAY_SESSION_MODE_SINGLE_LOGON)
     {
-        seat_set_property (seat, "autologin-user", session->user_name);
-        seat_set_property (seat, "autologin-user-timeout", "0");
-        seat_set_property (seat, "autologin-in-background", "false");
-        seat_set_property (seat, "autologin-guest", "false");
+        if (session->password)
+            seat_set_property (seat, "remote-password", session->password);
     }
 
     if (!display_manager_add_seat (remote_display_manager, seat))
@@ -486,10 +696,6 @@ remote_display_session_configure_seat (RemoteDisplaySession *session, Seat *seat
 
     session->seat = g_object_ref (seat);
     session->seat_stopped_handler = g_signal_connect (seat, SEAT_SIGNAL_STOPPED, G_CALLBACK (remote_display_session_seat_stopped_cb), session);
-    session->seat_session_added_handler = g_signal_connect (seat, SEAT_SIGNAL_SESSION_ADDED, G_CALLBACK (remote_display_session_seat_session_added_cb), session);
-    session->seat_session_removed_handler = g_signal_connect (seat, SEAT_SIGNAL_SESSION_REMOVED, G_CALLBACK (remote_display_session_seat_session_removed_cb), session);
-    remote_display_session_watch_existing_sessions (session);
-    remote_display_session_refresh_session_id (session);
     return TRUE;
 }
 
@@ -498,6 +704,7 @@ remote_display_session_create (guint32 remote_id,
                                guint32 width,
                                guint32 height,
                                const gchar *user_name,
+                               const gchar *password,
                                const gchar *address,
                                RemoteDisplaySessionMode mode,
                                GError **error)
@@ -533,10 +740,11 @@ remote_display_session_create (guint32 remote_id,
     session->width = width;
     session->height = height;
     session->user_name = g_strdup (user_name);
+    session->password = g_strdup (password);
     session->address = g_strdup (address);
     session->mode = mode;
     session->display_number = remote_display_allocate_display_number ();
-    session->session_id = 0;
+    session->session_id = g_strdup ("");
 
     g_autoptr(GError) register_error = NULL;
     if (!remote_display_session_register_object (session, &register_error))
@@ -577,7 +785,7 @@ remote_display_session_create (guint32 remote_id,
 static gboolean
 remote_display_factory_handle_create_remote_greeter_display (DrdDBusLightdmRemoteDisplayFactory *object,
                                                              GDBusMethodInvocation *invocation,
-                                                             guint arg_remote_id,
+                                                             const gchar *arg_client_id,
                                                              guint arg_width,
                                                              guint arg_height,
                                                              const gchar *arg_address,
@@ -586,9 +794,21 @@ remote_display_factory_handle_create_remote_greeter_display (DrdDBusLightdmRemot
     (void) user_data;
 
     g_autoptr(GError) error = NULL;
-    RemoteDisplaySession *session = remote_display_session_create (arg_remote_id,
+
+    guint32 remote_id = 0;
+    if (!remote_display_parse_client_id (arg_client_id, &remote_id, &error))
+    {
+        if (error && error->domain == G_DBUS_ERROR && error->code == G_DBUS_ERROR_INVALID_ARGS)
+            g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "%s", error->message);
+        else
+            g_dbus_method_invocation_return_gerror (invocation, error);
+        return TRUE;
+    }
+
+    RemoteDisplaySession *session = remote_display_session_create (remote_id,
                                                                    arg_width,
                                                                    arg_height,
+                                                                   NULL,
                                                                    NULL,
                                                                    arg_address,
                                                                    REMOTE_DISPLAY_SESSION_MODE_GREETER,
@@ -611,20 +831,69 @@ remote_display_factory_handle_create_remote_greeter_display (DrdDBusLightdmRemot
 static gboolean
 remote_display_factory_handle_create_single_logon_session (DrdDBusLightdmRemoteDisplayFactory *object,
                                                            GDBusMethodInvocation *invocation,
-                                                           guint arg_remote_id,
+                                                           GUnixFDList *fd_list,
+                                                           const gchar *arg_client_id,
                                                            guint arg_width,
                                                            guint arg_height,
-                                                           const gchar *arg_user_name,
+                                                           GVariant *arg_auth_fd,
                                                            const gchar *arg_address,
                                                            gpointer user_data)
 {
     (void) user_data;
 
     g_autoptr(GError) error = NULL;
-    RemoteDisplaySession *session = remote_display_session_create (arg_remote_id,
+
+    guint32 remote_id = 0;
+    if (!remote_display_parse_client_id (arg_client_id, &remote_id, &error))
+    {
+        if (error && error->domain == G_DBUS_ERROR && error->code == G_DBUS_ERROR_INVALID_ARGS)
+            g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "%s", error->message);
+        else
+            g_dbus_method_invocation_return_gerror (invocation, error);
+        return TRUE;
+    }
+
+    g_autofree gchar *remote_id_str = g_strdup_printf ("%u", remote_id);
+    g_autofree gchar *user_name = NULL;
+    g_autofree gchar *password = NULL;
+    remote_display_session_read_user_from_auth_fd (fd_list, arg_auth_fd, &user_name, &password, &error);
+    if (!user_name)
+    {
+        if (error && error->domain == G_DBUS_ERROR && error->code == G_DBUS_ERROR_INVALID_ARGS)
+            g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "%s", error->message);
+        else
+            g_dbus_method_invocation_return_gerror (invocation, error);
+        return TRUE;
+    }
+
+    RemoteDisplaySession *existing = remote_display_factory_find_remote_session_by_user_name (user_name);
+    if (existing)
+    {
+        g_free (existing->address);
+        existing->address = g_strdup (arg_address);
+
+        if (existing->seat)
+        {
+            seat_set_property (existing->seat, "remote-id", remote_id_str);
+            seat_set_property (existing->seat, "remote-address", existing->address ? existing->address : "");
+        }
+
+        drd_dbus_lightdm_remote_display_factory_session_set_address (existing->dbus_session,
+                                                                     existing->address ? existing->address : "");
+        drd_dbus_lightdm_remote_display_factory_session_set_client_id (existing->dbus_session, remote_id_str);
+
+        drd_dbus_lightdm_remote_display_factory_complete_create_single_logon_session (object,
+                                                                                      invocation,
+                                                                                      NULL,
+                                                                                      existing->object_path);
+        return TRUE;
+    }
+
+    RemoteDisplaySession *session = remote_display_session_create (remote_id,
                                                                    arg_width,
                                                                    arg_height,
-                                                                   arg_user_name,
+                                                                   user_name,
+                                                                   password,
                                                                    arg_address,
                                                                    REMOTE_DISPLAY_SESSION_MODE_SINGLE_LOGON,
                                                                    &error);
@@ -639,6 +908,7 @@ remote_display_factory_handle_create_single_logon_session (DrdDBusLightdmRemoteD
 
     drd_dbus_lightdm_remote_display_factory_complete_create_single_logon_session (object,
                                                                                   invocation,
+                                                                                  NULL,
                                                                                   session->object_path);
     return TRUE;
 }

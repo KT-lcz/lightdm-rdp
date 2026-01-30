@@ -19,8 +19,13 @@
 #include "greeter-session.h"
 #include "session-config.h"
 #include "user-list.h"
+#include "remote-display-factory.h"
+#include "seat-rdp.h"
 
 #include <unistd.h>
+#include <pthread.h>
+
+#include "seat-local.h"
 
 enum {
     SESSION_ADDED,
@@ -710,6 +715,16 @@ run_session (Seat *seat, Session *session)
 
     session_run (session);
 
+    if (!IS_GREETER_SESSION (session) && G_TYPE_CHECK_INSTANCE_TYPE (seat, SEAT_RDP_TYPE))
+    {
+        const gchar *client_id = seat_get_string_property (seat, "remote-id");
+        const gchar *user_name = session_get_username (session);
+        const gchar *login1_session_id = session_get_login1_session_id (session);
+        if (client_id && client_id[0] != '\0')
+            remote_display_factory_update_session_identity_for_client_id (client_id, user_name, login1_session_id);
+        else
+            remote_display_factory_update_session_identity (seat, user_name, login1_session_id);
+    }
     // FIXME: Wait until the session is ready
 
     if (session == priv->session_to_activate)
@@ -769,6 +784,37 @@ session_authentication_complete_cb (Session *session, Seat *seat)
 {
     if (session_get_is_authenticated (session))
     {
+        if (G_TYPE_CHECK_INSTANCE_TYPE (seat, SEAT_RDP_TYPE))
+        {
+            const gchar *user_name = session_get_username (session);
+            l_debug (seat, "authentication complete username: %s", user_name);
+            const gchar *remote_mode = seat_get_string_property (seat, "remote-mode");
+
+            /* Greeter session runs as greeter-user (e.g. lightdm); don't let it pollute remote session identity */
+            if (g_strcmp0 (remote_mode, "greeter") == 0 && IS_GREETER_SESSION (session))
+                goto skip_remote_identity;
+
+            if (g_strcmp0 (remote_mode, "greeter") == 0)
+            {
+                const gchar *client_id = seat_get_string_property (seat, "remote-id");
+                const gchar *address = seat_get_string_property (seat, "remote-address");
+                if (remote_display_factory_attach_existing_session (seat, user_name, client_id, address))
+                {
+                    l_debug (seat, "Remote greeter authenticated for existing session, stopping incoming seat");
+                    session_stop (session);
+                    seat_stop (seat);
+                    return;
+                }
+            }
+
+            remote_display_factory_update_session_identity (seat,
+                                                           user_name,
+                                                           session_get_login1_session_id (session));
+            l_debug (seat, "Session authentication session id: %s",  session_get_login1_session_id (session));
+
+skip_remote_identity:;
+        }
+
         Session *s = find_user_session (seat, session_get_username (session), session);
         if (s)
         {
@@ -918,8 +964,11 @@ session_stopped_cb (Session *session, Seat *seat)
     if (display_server && !display_server_get_is_stopping (display_server) &&
         !SEAT_GET_CLASS (seat)->display_server_is_used (seat, display_server))
     {
-        l_debug (seat, "Stopping display server, no sessions require it");
-        display_server_stop (display_server);
+        if (!G_TYPE_CHECK_INSTANCE_TYPE (seat, SEAT_RDP_TYPE))
+        {
+            l_debug (seat, "Stopping display server, no sessions require it");
+            display_server_stop (display_server);
+        }
     }
 }
 
@@ -1163,6 +1212,55 @@ get_greeter_session (Seat *seat, Greeter *greeter)
     return NULL;
 }
 
+static int delay_stop(void *data)
+{
+    seat_stop (data);
+    return G_SOURCE_REMOVE;
+}
+
+static void
+remote_greeter_authentication_complete_cb (Session *session, Seat *seat)
+{
+    l_debug(seat,"remote_greeter_authentication_complete_cb");
+    if (!session_get_is_authenticated (session))
+        return;
+
+    const gchar *remote_mode = seat_get_string_property (seat, "remote-mode");
+    if (g_strcmp0 (remote_mode, "greeter") != 0)
+        return;
+
+    const gchar *user_name = session_get_username (session);
+    g_autofree gchar *greeter_user = config_get_string (config_get_instance (), "LightDM", "greeter-user");
+    if (!user_name || user_name[0] == '\0' || (greeter_user && g_strcmp0 (user_name, greeter_user) == 0))
+    {
+        const gchar *cached = g_object_get_data (G_OBJECT (session), "rdp-requested-user");
+        if (cached && cached[0] != '\0')
+            user_name = cached;
+    }
+
+    if (!user_name || user_name[0] == '\0' || (greeter_user && g_strcmp0 (user_name, greeter_user) == 0))
+        return;
+
+    /* Keep behavior consistent with greeter.c: don't treat unknown users as success */
+    if (!accounts_get_user_by_name (user_name))
+        return;
+
+    const gchar *client_id = seat_get_string_property (seat, "remote-id");
+    const gchar *address = seat_get_string_property (seat, "remote-address");
+    if (client_id && client_id[0] != '\0' &&
+        remote_display_factory_attach_existing_session (seat, user_name, client_id, address))
+    {
+        // 延迟退出seat和display server,防止handover进程没有时间响应redirect_client信号
+        g_timeout_add_seconds (3, delay_stop, seat);
+        session_stop (session);
+        return;
+    }
+
+    /* In greeter authentication flow we only have identity, session_id comes after run_session() */
+    if (client_id && client_id[0] != '\0')
+        remote_display_factory_update_session_identity_for_client_id (client_id, user_name, NULL);
+}
+
 static Session *
 greeter_create_session_cb (Greeter *greeter, Seat *seat)
 {
@@ -1172,6 +1270,20 @@ greeter_create_session_cb (Greeter *greeter, Seat *seat)
     session = create_session (seat, FALSE);
     session_set_config (session, session_get_config (greeter_session));
     session_set_display_server (session, session_get_display_server (greeter_session));
+
+    const gchar *requested_user = greeter_get_active_username (greeter);
+    if (requested_user && requested_user[0] != '\0')
+        g_object_set_data_full (G_OBJECT (session), "rdp-requested-user", g_strdup (requested_user), g_free);
+
+    if (G_TYPE_CHECK_INSTANCE_TYPE (seat, SEAT_RDP_TYPE))
+    {
+        const gchar *remote_mode = seat_get_string_property (seat, "remote-mode");
+        if (g_strcmp0 (remote_mode, "greeter") == 0)
+            g_signal_connect_after (session,
+                                    SESSION_SIGNAL_AUTHENTICATION_COMPLETE,
+                                    G_CALLBACK (remote_greeter_authentication_complete_cb),
+                                    seat);
+    }
 
     return g_object_ref (session);
 }
@@ -1840,6 +1952,77 @@ is_username_in_quicklogin_users (const gchar* username)
     return result;
 }
 
+static gboolean
+seat_get_remote_single_logon_credentials (Seat *seat, const gchar **out_user, const gchar **out_password)
+{
+    const gchar *remote_mode = seat_get_string_property (seat, "remote-mode");
+    if (g_strcmp0 (remote_mode, "single-logon") != 0)
+        return FALSE;
+
+    const gchar *remote_user = seat_get_string_property (seat, "remote-user");
+    const gchar *remote_password = seat_get_string_property (seat, "remote-password");
+    if (!remote_user || remote_user[0] == '\0' || !remote_password || remote_password[0] == '\0')
+        return FALSE;
+
+    if (out_user)
+        *out_user = remote_user;
+    if (out_password)
+        *out_password = remote_password;
+
+    return TRUE;
+}
+
+static void
+seat_remote_single_logon_messages_cb (Session *session, Seat *seat)
+{
+    const struct pam_message *messages = session_get_messages (session);
+    int messages_length = session_get_messages_length (session);
+    int n_prompts = 0;
+
+    for (int i = 0; i < messages_length; i++)
+    {
+        int msg_style = messages[i].msg_style;
+        if (msg_style == PAM_PROMPT_ECHO_OFF || msg_style == PAM_PROMPT_ECHO_ON)
+            n_prompts++;
+    }
+
+    if (n_prompts == 0)
+    {
+        struct pam_response *response = calloc (messages_length, sizeof (struct pam_response));
+        session_respond (session, response);
+        free (response);
+        return;
+    }
+
+    const gchar *password = seat_get_string_property (seat, "remote-password");
+    if (!password || password[0] == '\0')
+    {
+        session_prompt_respond_error (session, PAM_CONV_ERR);
+        return;
+    }
+
+    struct pam_response *response = calloc (messages_length, sizeof (struct pam_response));
+    for (int i = 0; i < messages_length; i++)
+    {
+        int msg_style = messages[i].msg_style;
+        if (msg_style == PAM_PROMPT_ECHO_OFF || msg_style == PAM_PROMPT_ECHO_ON)
+            response[i].resp = g_strdup (password);
+    }
+
+    session_prompt_respond (session, response);
+
+    for (int i = 0; i < messages_length; i++)
+        g_free (response[i].resp);
+    free (response);
+}
+
+static void
+seat_remote_single_logon_auth_complete_cb (Session *session, Seat *seat)
+{
+    (void) session;
+    seat_set_property (seat, "remote-password", "");
+}
+
 static void
 seat_real_setup (Seat *seat)
 {
@@ -1849,6 +2032,36 @@ static gboolean
 seat_real_start (Seat *seat)
 {
     SeatPrivate *priv = seat_get_instance_private (seat);
+
+    // 远程单点登录场景
+    const gchar *remote_user = NULL;
+    if (seat_get_remote_single_logon_credentials (seat, &remote_user, NULL))
+    {
+        Session *session = create_user_session (seat, remote_user, FALSE);
+        if (session)
+        {
+            g_signal_connect (session, SESSION_SIGNAL_GOT_MESSAGES, G_CALLBACK (seat_remote_single_logon_messages_cb), seat);
+            g_signal_connect (session, SESSION_SIGNAL_AUTHENTICATION_COMPLETE, G_CALLBACK (session_authentication_complete_cb), seat);
+            g_signal_connect (session, SESSION_SIGNAL_AUTHENTICATION_COMPLETE, G_CALLBACK (seat_remote_single_logon_auth_complete_cb), seat);
+            session_set_pam_service (session, seat_get_string_property (seat, "pam-service"));
+            session_set_is_interactive (session, TRUE);
+
+            g_clear_object (&priv->session_to_activate);
+            priv->session_to_activate = g_object_ref (session);
+
+            DisplayServer *display_server = create_display_server (seat, session);
+            session_set_display_server (session, display_server);
+            if (!display_server || !start_display_server (seat, display_server))
+            {
+                l_debug (seat, "Can't create display server for remote single logon");
+                session_stop (session);
+                if (display_server)
+                    display_server_stop (display_server);
+            }
+            else
+                return TRUE;
+        }
+    }
 
     /* Get autologin settings */
     const gchar *autologin_username = seat_get_string_property (seat, "autologin-user");
