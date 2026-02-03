@@ -49,8 +49,17 @@ typedef struct
     gchar *config_path;
     guint display_number;
     gulong seat_stopped_handler;
+    gulong seat_running_user_session_handler;
+    gulong seat_session_removed_handler;
+    Session *running_user_session;
+    gboolean cleanup_scheduled;
     gchar *session_id;
 } RemoteDisplaySession;
+
+typedef struct
+{
+    guint32 remote_id;
+} RemoteDisplaySessionRemoval;
 
 static DisplayManager *remote_display_manager = NULL;
 static guint remote_display_factory_bus_id = 0;
@@ -155,16 +164,74 @@ remote_display_session_read_user_from_auth_fd (GUnixFDList *fd_list,
 }
 
 static RemoteDisplaySession *remote_display_session_create (guint32 remote_id,
-                                                             guint32 width,
-                                                             guint32 height,
-                                                             const gchar *user_name,
-                                                             const gchar *password,
-                                                             const gchar *address,
-                                                             RemoteDisplaySessionMode mode,
-                                                             GError **error);
+                                                              guint32 width,
+                                                              guint32 height,
+                                                              const gchar *user_name,
+                                                              const gchar *password,
+                                                              const gchar *address,
+                                                              RemoteDisplaySessionMode mode,
+                                                              GError **error);
 static void remote_display_session_free (RemoteDisplaySession *session);
 
+static gpointer remote_display_session_key (guint32 remote_id);
+
 static void remote_display_session_set_session_id (RemoteDisplaySession *session,const gchar *new_id);
+
+static gboolean
+remote_display_session_remove_idle_cb (gpointer user_data)
+{
+    RemoteDisplaySessionRemoval *removal = user_data;
+
+    if (remote_display_sessions)
+        g_hash_table_remove (remote_display_sessions, remote_display_session_key (removal->remote_id));
+
+    g_free (removal);
+    return G_SOURCE_REMOVE;
+}
+
+static void
+remote_display_session_running_user_session_cb (Seat *seat, Session *running_session, RemoteDisplaySession *session)
+{
+    (void) seat;
+
+    if (!session || !running_session)
+        return;
+
+    if (session->running_user_session == running_session)
+        return;
+
+    g_clear_object (&session->running_user_session);
+    session->running_user_session = g_object_ref (running_session);
+}
+
+static void
+remote_display_session_session_removed_cb (Seat *seat, Session *removed_session, RemoteDisplaySession *session)
+{
+    (void) seat;
+
+    if (!session || !removed_session)
+        return;
+    if (session->cleanup_scheduled)
+        return;
+    if (!session->running_user_session)
+        return;
+    if (removed_session != session->running_user_session)
+        return;
+
+    /* The user desktop session ended; stop exporting the RemoteDisplaySession object. */
+    if (session->dbus_session)
+    {
+        g_dbus_interface_skeleton_unexport (G_DBUS_INTERFACE_SKELETON (session->dbus_session));
+        g_clear_object (&session->dbus_session);
+    }
+
+    session->cleanup_scheduled = TRUE;
+
+    /* Defer actual removal/free to avoid re-entrancy while handling seat signals. */
+    RemoteDisplaySessionRemoval *removal = g_new0 (RemoteDisplaySessionRemoval, 1);
+    removal->remote_id = session->remote_id;
+    g_idle_add_full (G_PRIORITY_DEFAULT_IDLE, remote_display_session_remove_idle_cb, removal, NULL);
+}
 
 static gpointer
 remote_display_session_key (guint32 remote_id)
@@ -622,10 +689,16 @@ remote_display_session_free (RemoteDisplaySession *session)
         g_clear_object (&session->dbus_session);
     }
 
+    g_clear_object (&session->running_user_session);
+
     if (session->seat)
     {
         if (session->seat_stopped_handler)
             g_signal_handler_disconnect (session->seat, session->seat_stopped_handler);
+        if (session->seat_running_user_session_handler)
+            g_signal_handler_disconnect (session->seat, session->seat_running_user_session_handler);
+        if (session->seat_session_removed_handler)
+            g_signal_handler_disconnect (session->seat, session->seat_session_removed_handler);
         if (!seat_get_is_stopping (session->seat))
             seat_stop (session->seat);
         g_clear_object (&session->seat);
@@ -695,6 +768,15 @@ remote_display_session_configure_seat (RemoteDisplaySession *session, Seat *seat
     }
 
     session->seat = g_object_ref (seat);
+
+    session->seat_running_user_session_handler = g_signal_connect (seat,
+                                                                   SEAT_SIGNAL_RUNNING_USER_SESSION,
+                                                                   G_CALLBACK (remote_display_session_running_user_session_cb),
+                                                                   session);
+    session->seat_session_removed_handler = g_signal_connect (seat,
+                                                              SEAT_SIGNAL_SESSION_REMOVED,
+                                                              G_CALLBACK (remote_display_session_session_removed_cb),
+                                                              session);
     session->seat_stopped_handler = g_signal_connect (seat, SEAT_SIGNAL_STOPPED, G_CALLBACK (remote_display_session_seat_stopped_cb), session);
     return TRUE;
 }
