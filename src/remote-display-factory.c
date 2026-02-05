@@ -23,6 +23,7 @@
 
 #define REMOTE_DISPLAY_FACTORY_BUS_NAME "org.deepin.DisplayManager"
 #define REMOTE_DISPLAY_FACTORY_OBJECT_PATH "/org/deepin/DisplayManager/RemoteDisplayFactory"
+#define REMOTE_DISPLAY_ROOT "/org/deepin/DisplayManager"
 #define REMOTE_DISPLAY_SESSION_OBJECT_PREFIX "/org/deepin/DisplayManager/RemoteDisplayFactory/Sessions"
 #define REMOTE_DISPLAY_X_COMMAND "/usr/bin/Xorg"
 #define REMOTE_DISPLAY_CONFIG_DIR "/var/lib/lightdm/remote-displays"
@@ -42,6 +43,7 @@ typedef struct
     gchar *password;
     gchar *address;
     gchar *object_path;
+    GDBusObjectSkeleton *dbus_object;
     DrdDBusLightdmRemoteDisplayFactorySession *dbus_session;
     RemoteDisplaySessionMode mode;
 
@@ -64,6 +66,8 @@ typedef struct
 static DisplayManager *remote_display_manager = NULL;
 static guint remote_display_factory_bus_id = 0;
 static GDBusConnection *remote_display_connection = NULL;
+static GDBusObjectManagerServer *remote_display_object_manager = NULL;
+static GDBusObjectSkeleton *remote_display_factory_object = NULL;
 static DrdDBusLightdmRemoteDisplayFactory *remote_display_factory_skeleton = NULL;
 static GHashTable *remote_display_sessions = NULL;
 static GHashTable *remote_display_numbers_in_use = NULL;
@@ -219,11 +223,10 @@ remote_display_session_session_removed_cb (Seat *seat, Session *removed_session,
         return;
 
     /* The user desktop session ended; stop exporting the RemoteDisplaySession object. */
-    if (session->dbus_session)
-    {
-        g_dbus_interface_skeleton_unexport (G_DBUS_INTERFACE_SKELETON (session->dbus_session));
-        g_clear_object (&session->dbus_session);
-    }
+    if (session->object_path && remote_display_object_manager)
+        g_dbus_object_manager_server_unexport (remote_display_object_manager, session->object_path);
+    g_clear_object (&session->dbus_object);
+    g_clear_object (&session->dbus_session);
 
     session->cleanup_scheduled = TRUE;
 
@@ -511,6 +514,12 @@ remote_display_session_register_object (RemoteDisplaySession *session, GError **
     g_return_val_if_fail (session != NULL, FALSE);
     g_return_val_if_fail (remote_display_connection != NULL, FALSE);
 
+    if (!remote_display_object_manager)
+    {
+        g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "Remote display object manager not ready");
+        return FALSE;
+    }
+
     g_autofree gchar *path = g_strdup_printf ("%s/%u", REMOTE_DISPLAY_SESSION_OBJECT_PREFIX, ++remote_display_session_index);
     session->object_path = g_steal_pointer (&path);
     g_autoptr(DrdDBusLightdmRemoteDisplayFactorySession) session_skeleton =
@@ -526,11 +535,10 @@ remote_display_session_register_object (RemoteDisplaySession *session, GError **
     drd_dbus_lightdm_remote_display_factory_session_set_client_id (session_skeleton,
                                                                     remote_id_str);
 
-    if (!g_dbus_interface_skeleton_export (G_DBUS_INTERFACE_SKELETON (session_skeleton),
-                                           remote_display_connection,
-                                           session->object_path,
-                                           error))
-        return FALSE;
+    session->dbus_object = g_dbus_object_skeleton_new (session->object_path);
+    g_dbus_object_skeleton_add_interface (session->dbus_object,
+                                          G_DBUS_INTERFACE_SKELETON (session_skeleton));
+    g_dbus_object_manager_server_export (remote_display_object_manager, session->dbus_object);
 
     session->dbus_session = g_steal_pointer (&session_skeleton);
     return TRUE;
@@ -683,11 +691,10 @@ remote_display_session_free (RemoteDisplaySession *session)
     if (!session)
         return;
 
-    if (session->dbus_session)
-    {
-        g_dbus_interface_skeleton_unexport (G_DBUS_INTERFACE_SKELETON (session->dbus_session));
-        g_clear_object (&session->dbus_session);
-    }
+    if (session->object_path && remote_display_object_manager)
+        g_dbus_object_manager_server_unexport (remote_display_object_manager, session->object_path);
+    g_clear_object (&session->dbus_object);
+    g_clear_object (&session->dbus_session);
 
     g_clear_object (&session->running_user_session);
 
@@ -1002,6 +1009,16 @@ remote_display_factory_name_acquired_cb (GDBusConnection *connection,
 {
     remote_display_connection = g_object_ref (connection);
 
+    if (remote_display_object_manager)
+    {
+        g_dbus_object_manager_server_set_connection (remote_display_object_manager, NULL);
+        g_clear_object (&remote_display_object_manager);
+    }
+    g_clear_object (&remote_display_factory_object);
+
+    remote_display_object_manager = g_dbus_object_manager_server_new (REMOTE_DISPLAY_ROOT);
+    g_dbus_object_manager_server_set_connection (remote_display_object_manager, connection);
+
     g_autoptr(DrdDBusLightdmRemoteDisplayFactory) factory_skeleton =
         drd_dbus_lightdm_remote_display_factory_skeleton_new ();
     g_signal_connect (factory_skeleton,
@@ -1013,16 +1030,10 @@ remote_display_factory_name_acquired_cb (GDBusConnection *connection,
                       G_CALLBACK (remote_display_factory_handle_create_single_logon_session),
                       NULL);
 
-    g_autoptr(GError) error = NULL;
-    if (!g_dbus_interface_skeleton_export (G_DBUS_INTERFACE_SKELETON (factory_skeleton),
-                                           connection,
-                                           REMOTE_DISPLAY_FACTORY_OBJECT_PATH,
-                                           &error))
-    {
-        const gchar *message = error ? error->message : "unknown error";
-        g_critical ("Failed to export remote display factory: %s", message);
-        return;
-    }
+    remote_display_factory_object = g_dbus_object_skeleton_new (REMOTE_DISPLAY_FACTORY_OBJECT_PATH);
+    g_dbus_object_skeleton_add_interface (remote_display_factory_object,
+                                          G_DBUS_INTERFACE_SKELETON (factory_skeleton));
+    g_dbus_object_manager_server_export (remote_display_object_manager, remote_display_factory_object);
 
     remote_display_factory_skeleton = g_steal_pointer (&factory_skeleton);
 }
@@ -1033,9 +1044,16 @@ remote_display_factory_name_lost_cb (GDBusConnection *connection,
                                      G_GNUC_UNUSED gpointer user_data)
 {
     (void) connection;
+
+    if (remote_display_object_manager)
+    {
+        g_dbus_object_manager_server_set_connection (remote_display_object_manager, NULL);
+        g_clear_object (&remote_display_object_manager);
+    }
+    g_clear_object (&remote_display_factory_object);
+
     if (remote_display_factory_skeleton)
     {
-        g_dbus_interface_skeleton_unexport (G_DBUS_INTERFACE_SKELETON (remote_display_factory_skeleton));
         g_clear_object (&remote_display_factory_skeleton);
     }
 
@@ -1074,11 +1092,7 @@ remote_display_factory_stop (void)
         remote_display_factory_bus_id = 0;
     }
 
-    if (remote_display_factory_skeleton)
-    {
-        g_dbus_interface_skeleton_unexport (G_DBUS_INTERFACE_SKELETON (remote_display_factory_skeleton));
-        g_clear_object (&remote_display_factory_skeleton);
-    }
+    g_clear_object (&remote_display_factory_skeleton);
 
     if (remote_display_sessions)
     {
@@ -1094,6 +1108,13 @@ remote_display_factory_stop (void)
 
     /* Best-effort cleanup of generated configs */
     g_rmdir (REMOTE_DISPLAY_CONFIG_DIR);
+
+    if (remote_display_object_manager)
+    {
+        g_dbus_object_manager_server_set_connection (remote_display_object_manager, NULL);
+        g_clear_object (&remote_display_object_manager);
+    }
+    g_clear_object (&remote_display_factory_object);
 
     g_clear_object (&remote_display_connection);
     g_clear_object (&remote_display_manager);
