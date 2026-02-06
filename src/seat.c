@@ -1212,9 +1212,10 @@ get_greeter_session (Seat *seat, Greeter *greeter)
     return NULL;
 }
 
-static int delay_stop(void *data)
+static gboolean
+delay_stop (gpointer data)
 {
-    seat_stop (data);
+    seat_stop (SEAT (data));
     return G_SOURCE_REMOVE;
 }
 
@@ -1242,7 +1243,8 @@ remote_greeter_authentication_complete_cb (Session *session, Seat *seat)
         return;
 
     /* Keep behavior consistent with greeter.c: don't treat unknown users as success */
-    if (!accounts_get_user_by_name (user_name))
+    g_autoptr(User) user = accounts_get_user_by_name (user_name);
+    if (!user)
         return;
 
     const gchar *client_id = seat_get_string_property (seat, "remote-id");
@@ -1251,7 +1253,7 @@ remote_greeter_authentication_complete_cb (Session *session, Seat *seat)
         remote_display_factory_attach_existing_session (seat, user_name, client_id, address))
     {
         // 延迟退出seat和display server,防止handover进程没有时间响应redirect_client信号
-        g_timeout_add_seconds (3, delay_stop, seat);
+        g_timeout_add_seconds_full (G_PRIORITY_DEFAULT, 3, delay_stop, g_object_ref (seat), g_object_unref);
         session_stop (session);
         return;
     }

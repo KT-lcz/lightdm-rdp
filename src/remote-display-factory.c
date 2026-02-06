@@ -27,6 +27,7 @@
 #define REMOTE_DISPLAY_SESSION_OBJECT_PREFIX "/org/deepin/DisplayManager/RemoteDisplayFactory/Sessions"
 #define REMOTE_DISPLAY_X_COMMAND "/usr/bin/Xorg"
 #define REMOTE_DISPLAY_CONFIG_DIR "/var/lib/lightdm/remote-displays"
+#define REMOTE_DISPLAY_AUTH_MAX_BYTES 4096
 
 typedef enum
 {
@@ -121,6 +122,12 @@ remote_display_session_read_user_from_auth_fd (GUnixFDList *fd_list,
         close (fd);
         return NULL;
     }
+    if (st.st_size > (off_t) REMOTE_DISPLAY_AUTH_MAX_BYTES)
+    {
+        g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Auth fd payload too large");
+        close (fd);
+        return NULL;
+    }
 
     void *map = mmap (NULL, (size_t) st.st_size, PROT_READ, MAP_SHARED, fd, 0);
     if (map == MAP_FAILED)
@@ -149,6 +156,13 @@ remote_display_session_read_user_from_auth_fd (GUnixFDList *fd_list,
 
     g_autofree gchar *user_name = g_strdup (lines[0]);
     g_autofree gchar *password = g_strdup (lines[1]);
+
+    if (!user_name || !password)
+    {
+        g_set_error (error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Out of memory");
+        return NULL;
+    }
+
     gsize user_len = strlen (user_name);
     if (user_len > 0 && user_name[user_len - 1] == '\r')
         user_name[user_len - 1] = '\0';

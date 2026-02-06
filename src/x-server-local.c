@@ -323,17 +323,18 @@ x_server_local_get_vt (DisplayServer *server)
 const gchar *
 x_server_local_get_authority_file_path (XServerLocal *server)
 {
+    g_return_val_if_fail (server != NULL, NULL);
+
     XServerLocalPrivate *priv = x_server_local_get_instance_private (server);
-    g_return_val_if_fail (server != NULL, 0);
     return priv->authority_file;
 }
 
 gboolean
 x_server_local_set_display_number (XServerLocal *server, guint display_number)
 {
-    XServerLocalPrivate *priv = x_server_local_get_instance_private (server);
-
     g_return_val_if_fail (server != NULL, FALSE);
+
+    XServerLocalPrivate *priv = x_server_local_get_instance_private (server);
 
     if (priv->display_number == display_number)
         return TRUE;

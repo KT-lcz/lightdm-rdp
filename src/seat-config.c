@@ -14,7 +14,7 @@ get_config_sections (const gchar *seat_name)
     GList *config_sections = g_list_append (NULL, g_strdup ("Seat:*"));
 
     g_auto(GStrv) groups = config_get_groups (config_get_instance ());
-    for (gchar **i = groups; *i; i++)
+    for (gchar **i = groups; i && *i; i++)
     {
         if (g_str_has_prefix (*i, "Seat:") && strcmp (*i, "Seat:*") != 0)
         {
