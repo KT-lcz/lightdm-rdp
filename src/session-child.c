@@ -311,6 +311,20 @@ session_child_run (int argc, char **argv)
     else if (tty)
         pam_set_item (pam_handle, PAM_TTY, tty);
 
+    /* Ensure logind can see remote sessions (via pam_systemd) */
+    if (remote_host_name && remote_host_name[0])
+    {
+        int set_result = pam_set_item (pam_handle, PAM_RHOST, remote_host_name);
+        if (set_result != PAM_SUCCESS)
+            g_printerr ("Failed to set PAM_RHOST: %s\n", pam_strerror (pam_handle, set_result));
+        else
+            g_debug ("Set PAM_RHOST=%s", remote_host_name);
+    }
+    else
+    {
+        g_debug ("No remote host name provided; PAM_RHOST not set");
+    }
+
 #ifdef PAM_XAUTHDATA
     if (x_authority)
     {
