@@ -163,7 +163,9 @@ x_server_connect_session (DisplayServer *display_server, Session *session)
 
     session_set_env (session, "DISPLAY", x_server_get_address (X_SERVER (display_server)));
     session_set_xdisplay (session, x_server_get_address (X_SERVER (display_server)));
-    session_set_remote_host_name (session, x_server_get_hostname (X_SERVER (display_server)));
+    const gchar *x_hostname = x_server_get_hostname (X_SERVER (display_server));
+    if (x_hostname && x_hostname[0])
+        session_set_remote_host_name (session, x_hostname);
     session_set_x_authority (session,
                              x_server_get_authority (X_SERVER (display_server)),
                              config_get_boolean (config_get_instance (), "LightDM", "user-authority-in-system-dir"));
