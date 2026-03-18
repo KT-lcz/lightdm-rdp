@@ -44,8 +44,12 @@ typedef struct
     gboolean (*start)(Seat *seat);
     DisplayServer *(*create_display_server) (Seat *seat, Session *session);
     gboolean (*display_server_is_used) (Seat *seat, DisplayServer *display_server);
+    gboolean (*can_stop_unused_display_server) (Seat *seat, DisplayServer *display_server);
     GreeterSession *(*create_greeter_session) (Seat *seat);
     Session *(*create_session) (Seat *seat);
+    gboolean (*session_authenticated) (Seat *seat, Session *session);
+    void (*prepare_session_for_greeter) (Seat *seat, Session *session, Greeter *greeter);
+    void (*session_running) (Seat *seat, Session *session);
     void (*set_active_session)(Seat *seat, Session *session);
     void (*set_next_session)(Seat *seat, Session *session);
     Session *(*get_active_session)(Seat *seat);

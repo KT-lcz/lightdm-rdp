@@ -19,8 +19,6 @@
 #include "greeter-session.h"
 #include "session-config.h"
 #include "user-list.h"
-#include "remote-display-factory.h"
-#include "seat-rdp.h"
 
 #include <unistd.h>
 #include <pthread.h>
@@ -99,6 +97,9 @@ static DisplayServer *create_display_server (Seat *seat, Session *session);
 static gboolean start_display_server (Seat *seat, DisplayServer *display_server);
 static GreeterSession *create_greeter_session (Seat *seat);
 static void start_session (Seat *seat, Session *session);
+static gboolean seat_handle_session_authenticated (Seat *seat, Session *session);
+static void seat_prepare_session_for_greeter (Seat *seat, Session *session, Greeter *greeter);
+static void seat_notify_session_running (Seat *seat, Session *session);
 
 static gboolean
 seat_should_restart_greeter (Seat *seat)
@@ -714,17 +715,7 @@ run_session (Seat *seat, Session *session)
     }
 
     session_run (session);
-
-    if (!IS_GREETER_SESSION (session) && G_TYPE_CHECK_INSTANCE_TYPE (seat, SEAT_RDP_TYPE))
-    {
-        const gchar *client_id = seat_get_string_property (seat, "remote-id");
-        const gchar *user_name = session_get_username (session);
-        const gchar *login1_session_id = session_get_login1_session_id (session);
-        if (client_id && client_id[0] != '\0')
-            remote_display_factory_update_session_identity_for_client_id (client_id, user_name, login1_session_id);
-        else
-            remote_display_factory_update_session_identity (seat, user_name, login1_session_id);
-    }
+    seat_notify_session_running (seat, session);
     // FIXME: Wait until the session is ready
 
     if (session == priv->session_to_activate)
@@ -784,36 +775,8 @@ session_authentication_complete_cb (Session *session, Seat *seat)
 {
     if (session_get_is_authenticated (session))
     {
-        if (G_TYPE_CHECK_INSTANCE_TYPE (seat, SEAT_RDP_TYPE))
-        {
-            const gchar *user_name = session_get_username (session);
-            l_debug (seat, "authentication complete username: %s", user_name);
-            const gchar *remote_mode = seat_get_string_property (seat, "remote-mode");
-
-            /* Greeter session runs as greeter-user (e.g. lightdm); don't let it pollute remote session identity */
-            if (g_strcmp0 (remote_mode, "greeter") == 0 && IS_GREETER_SESSION (session))
-                goto skip_remote_identity;
-
-            if (g_strcmp0 (remote_mode, "greeter") == 0)
-            {
-                const gchar *client_id = seat_get_string_property (seat, "remote-id");
-                const gchar *address = seat_get_string_property (seat, "remote-address");
-                if (remote_display_factory_attach_existing_session (seat, user_name, client_id, address))
-                {
-                    l_debug (seat, "Remote greeter authenticated for existing session, stopping incoming seat");
-                    session_stop (session);
-                    seat_stop (seat);
-                    return;
-                }
-            }
-
-            remote_display_factory_update_session_identity (seat,
-                                                           user_name,
-                                                           session_get_login1_session_id (session));
-            l_debug (seat, "Session authentication session id: %s",  session_get_login1_session_id (session));
-
-skip_remote_identity:;
-        }
+        if (seat_handle_session_authenticated (seat, session))
+            return;
 
         Session *s = find_user_session (seat, session_get_username (session), session);
         if (s)
@@ -962,13 +925,11 @@ session_stopped_cb (Session *session, Seat *seat)
 
     /* Stop the display server if no-longer required */
     if (display_server && !display_server_get_is_stopping (display_server) &&
-        !SEAT_GET_CLASS (seat)->display_server_is_used (seat, display_server))
+        !SEAT_GET_CLASS (seat)->display_server_is_used (seat, display_server) &&
+        SEAT_GET_CLASS (seat)->can_stop_unused_display_server (seat, display_server))
     {
-        if (!G_TYPE_CHECK_INSTANCE_TYPE (seat, SEAT_RDP_TYPE))
-        {
-            l_debug (seat, "Stopping display server, no sessions require it");
-            display_server_stop (display_server);
-        }
+        l_debug (seat, "Stopping display server, no sessions require it");
+        display_server_stop (display_server);
     }
 }
 
@@ -1212,57 +1173,6 @@ get_greeter_session (Seat *seat, Greeter *greeter)
     return NULL;
 }
 
-static gboolean
-delay_stop (gpointer data)
-{
-    seat_stop (SEAT (data));
-    return G_SOURCE_REMOVE;
-}
-
-static void
-remote_greeter_authentication_complete_cb (Session *session, Seat *seat)
-{
-    l_debug(seat,"remote_greeter_authentication_complete_cb");
-    if (!session_get_is_authenticated (session))
-        return;
-
-    const gchar *remote_mode = seat_get_string_property (seat, "remote-mode");
-    if (g_strcmp0 (remote_mode, "greeter") != 0)
-        return;
-
-    const gchar *user_name = session_get_username (session);
-    g_autofree gchar *greeter_user = config_get_string (config_get_instance (), "LightDM", "greeter-user");
-    if (!user_name || user_name[0] == '\0' || (greeter_user && g_strcmp0 (user_name, greeter_user) == 0))
-    {
-        const gchar *cached = g_object_get_data (G_OBJECT (session), "rdp-requested-user");
-        if (cached && cached[0] != '\0')
-            user_name = cached;
-    }
-
-    if (!user_name || user_name[0] == '\0' || (greeter_user && g_strcmp0 (user_name, greeter_user) == 0))
-        return;
-
-    /* Keep behavior consistent with greeter.c: don't treat unknown users as success */
-    g_autoptr(User) user = accounts_get_user_by_name (user_name);
-    if (!user)
-        return;
-
-    const gchar *client_id = seat_get_string_property (seat, "remote-id");
-    const gchar *address = seat_get_string_property (seat, "remote-address");
-    if (client_id && client_id[0] != '\0' &&
-        remote_display_factory_attach_existing_session (seat, user_name, client_id, address))
-    {
-        // 延迟退出seat和display server,防止handover进程没有时间响应redirect_client信号
-        g_timeout_add_seconds_full (G_PRIORITY_DEFAULT, 3, delay_stop, g_object_ref (seat), g_object_unref);
-        session_stop (session);
-        return;
-    }
-
-    /* In greeter authentication flow we only have identity, session_id comes after run_session() */
-    if (client_id && client_id[0] != '\0')
-        remote_display_factory_update_session_identity_for_client_id (client_id, user_name, NULL);
-}
-
 static Session *
 greeter_create_session_cb (Greeter *greeter, Seat *seat)
 {
@@ -1273,19 +1183,7 @@ greeter_create_session_cb (Greeter *greeter, Seat *seat)
     session_set_config (session, session_get_config (greeter_session));
     session_set_display_server (session, session_get_display_server (greeter_session));
 
-    const gchar *requested_user = greeter_get_active_username (greeter);
-    if (requested_user && requested_user[0] != '\0')
-        g_object_set_data_full (G_OBJECT (session), "rdp-requested-user", g_strdup (requested_user), g_free);
-
-    if (G_TYPE_CHECK_INSTANCE_TYPE (seat, SEAT_RDP_TYPE))
-    {
-        const gchar *remote_mode = seat_get_string_property (seat, "remote-mode");
-        if (g_strcmp0 (remote_mode, "greeter") == 0)
-            g_signal_connect_after (session,
-                                    SESSION_SIGNAL_AUTHENTICATION_COMPLETE,
-                                    G_CALLBACK (remote_greeter_authentication_complete_cb),
-                                    seat);
-    }
+    seat_prepare_session_for_greeter (seat, session, greeter);
 
     return g_object_ref (session);
 }
@@ -2198,10 +2096,61 @@ seat_real_display_server_is_used (Seat *seat, DisplayServer *display_server)
     return FALSE;
 }
 
+static gboolean
+seat_real_can_stop_unused_display_server (Seat *seat, DisplayServer *display_server)
+{
+    (void) seat;
+    (void) display_server;
+
+    return TRUE;
+}
+
+static gboolean
+seat_real_session_authenticated (Seat *seat, Session *session)
+{
+    (void) seat;
+    (void) session;
+
+    return FALSE;
+}
+
+static void
+seat_real_prepare_session_for_greeter (Seat *seat, Session *session, Greeter *greeter)
+{
+    (void) seat;
+    (void) session;
+    (void) greeter;
+}
+
+static void
+seat_real_session_running (Seat *seat, Session *session)
+{
+    (void) seat;
+    (void) session;
+}
+
 static GreeterSession *
 seat_real_create_greeter_session (Seat *seat)
 {
     return greeter_session_new ();
+}
+
+static gboolean
+seat_handle_session_authenticated (Seat *seat, Session *session)
+{
+    return SEAT_GET_CLASS (seat)->session_authenticated (seat, session);
+}
+
+static void
+seat_prepare_session_for_greeter (Seat *seat, Session *session, Greeter *greeter)
+{
+    SEAT_GET_CLASS (seat)->prepare_session_for_greeter (seat, session, greeter);
+}
+
+static void
+seat_notify_session_running (Seat *seat, Session *session)
+{
+    SEAT_GET_CLASS (seat)->session_running (seat, session);
 }
 
 static Session *
@@ -2340,8 +2289,12 @@ seat_class_init (SeatClass *klass)
     klass->start = seat_real_start;
     klass->create_display_server = seat_real_create_display_server;
     klass->display_server_is_used = seat_real_display_server_is_used;
+    klass->can_stop_unused_display_server = seat_real_can_stop_unused_display_server;
     klass->create_greeter_session = seat_real_create_greeter_session;
     klass->create_session = seat_real_create_session;
+    klass->session_authenticated = seat_real_session_authenticated;
+    klass->prepare_session_for_greeter = seat_real_prepare_session_for_greeter;
+    klass->session_running = seat_real_session_running;
     klass->set_active_session = seat_real_set_active_session;
     klass->get_active_session = seat_real_get_active_session;
     klass->set_next_session = seat_real_set_next_session;

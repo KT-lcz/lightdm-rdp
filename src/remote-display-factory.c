@@ -325,6 +325,35 @@ remote_display_session_seat_has_user (RemoteDisplaySession *session,
     return (session->user_name && session->user_name[0] != '\0' && g_strcmp0 (session->user_name, user_name) == 0);
 }
 
+static void
+remote_display_session_set_connection_info (RemoteDisplaySession *session,
+                                            const gchar          *client_id,
+                                            const gchar          *address)
+{
+    g_return_if_fail (session != NULL);
+
+    g_free (session->address);
+    session->address = g_strdup (address);
+
+    if (session->seat && !seat_get_is_stopping (session->seat))
+    {
+        seat_set_property (session->seat, "remote-id", client_id ? client_id : "");
+        seat_set_property (session->seat, "remote-address", session->address ? session->address : "");
+        if (session->user_name && session->user_name[0] != '\0')
+            seat_set_property (session->seat, "remote-user", session->user_name);
+    }
+
+    if (session->dbus_session)
+    {
+        drd_dbus_lightdm_remote_display_factory_session_set_address (session->dbus_session,
+                                                                     session->address ? session->address : "");
+        drd_dbus_lightdm_remote_display_factory_session_set_client_id (session->dbus_session,
+                                                                       client_id ? client_id : "");
+        drd_dbus_lightdm_remote_display_factory_session_set_user_name (session->dbus_session,
+                                                                       session->user_name ? session->user_name : "");
+    }
+}
+
 gboolean
 remote_display_factory_update_session_identity (Seat        *seat,
                                                 const gchar *user_name,
@@ -400,28 +429,13 @@ remote_display_factory_attach_existing_session (Seat        *incoming_seat,
     if (!match->dbus_session)
         return FALSE;
 
-    g_free (match->address);
-    match->address = g_strdup (address);
-
     if (!match->user_name || match->user_name[0] == '\0')
     {
         g_free (match->user_name);
         match->user_name = g_strdup (user_name);
     }
 
-    if (match->seat && !seat_get_is_stopping (match->seat))
-    {
-        seat_set_property (match->seat, "remote-id", client_id);
-        seat_set_property (match->seat, "remote-address", match->address ? match->address : "");
-        if (match->user_name && match->user_name[0] != '\0')
-            seat_set_property (match->seat, "remote-user", match->user_name);
-    }
-
-    drd_dbus_lightdm_remote_display_factory_session_set_address (match->dbus_session,
-                                                                 match->address ? match->address : "");
-    drd_dbus_lightdm_remote_display_factory_session_set_client_id (match->dbus_session, client_id);
-    drd_dbus_lightdm_remote_display_factory_session_set_user_name (match->dbus_session,
-                                                                   match->user_name ? match->user_name : "");
+    remote_display_session_set_connection_info (match, client_id, address);
 
     return TRUE;
 }
@@ -609,7 +623,6 @@ remote_display_session_build_config (RemoteDisplaySession *session)
     // };
     GString *modelines = g_string_new ("");
     GString *modes = g_string_new ("");
-    gsize i = 0;
 
     remote_display_append_mode (modelines, modes, session->width, session->height);
     // for (i = 0; i < G_N_ELEMENTS (default_resolutions); i++)
@@ -973,18 +986,7 @@ remote_display_factory_handle_create_single_logon_session (DrdDBusLightdmRemoteD
     RemoteDisplaySession *existing = remote_display_factory_find_remote_session_by_user_name (user_name);
     if (existing)
     {
-        g_free (existing->address);
-        existing->address = g_strdup (arg_address);
-
-        if (existing->seat)
-        {
-            seat_set_property (existing->seat, "remote-id", remote_id_str);
-            seat_set_property (existing->seat, "remote-address", existing->address ? existing->address : "");
-        }
-
-        drd_dbus_lightdm_remote_display_factory_session_set_address (existing->dbus_session,
-                                                                     existing->address ? existing->address : "");
-        drd_dbus_lightdm_remote_display_factory_session_set_client_id (existing->dbus_session, remote_id_str);
+        remote_display_session_set_connection_info (existing, remote_id_str, arg_address);
 
         drd_dbus_lightdm_remote_display_factory_complete_create_single_logon_session (object,
                                                                                       invocation,
